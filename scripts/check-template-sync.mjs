@@ -3,6 +3,10 @@ import { geomOf } from '../src/dieline/geom.js';
 import { heroPanelOf } from '../src/dieline/hero.js';
 import { TPLS } from '../src/dieline/templates.js';
 import { makePieces } from '../src/render3d/fold.js';
+import {
+  applyNetPreset, customLayout, customPieces, toNetCustom,
+  addNetPanel, deleteNetPanel, NET_PRESETS
+} from '../src/dieline/custom.js';
 
 // 结构页是一张生产刀版，3D 会把组合翼片拆开、把卷筒分段，并可省略成品内藏糊口；
 // 因此这里核对语义库存，而不是把 2D fill 数量与 3D mesh 数量简单画等号。
@@ -14,7 +18,11 @@ const CONTRACTS = {
   drawer:  { pieces: 2, main: 9, accessory: 4, glue: 1, panels: 9, asm: ['drawer'] },
   // 卷筒生产刀版含糊口；闭合 3D 壳省略被筒身覆盖的内藏糊口。
   cyl:     { pieces: 1, main: 26, accessory: 0, glue: 0, panels: 3, asm: [] },
-  hex:     { pieces: 1, main: 8, accessory: 0, glue: 0, panels: 8, asm: [] }
+  hex:     { pieces: 1, main: 8, accessory: 0, glue: 0, panels: 8, asm: [] },
+  tri:     { pieces: 1, main: 5, accessory: 0, glue: 0, panels: 5, asm: [] },
+  // Mi caja (constructor): fondo + 4 paredes + tapa; lengüeta + 3 solapas + 8 pestañas de esquina.
+  wrap:    { pieces: 1, main: 17, accessory: 0, glue: 0, panels: 17, asm: [] },
+  custom:  { pieces: 1, main: 6, accessory: 12, glue: 0, panels: 18, asm: [] }
 };
 
 const CASES = [
@@ -94,5 +102,54 @@ for (const c of CASES) {
   }
 }
 
-assert.throws(() => makePieces('__unknown__', 80, 40, 120, 0.45, 14), /未知盒型/, '未知盒型必须立即失败，禁止静默回退到其它折叠树');
-console.log(`结构/设计/3D 同步检查通过：${ids.length} 个盒型 × ${CASES.length} 组尺寸`);
+// —— Red avanzada: presets multipieza, layout 2D, piezas 3D y edición ——
+const netState = { tpl: 'custom', custom: {}, L: 80, W: 40, H: 120, bleed: 3, glue: 14, ovr: {}, typeOvr: {} };
+for (const preset of NET_PRESETS) {
+  const custom = applyNetPreset(preset.id, netState.custom, netState);
+  assert.equal(custom.mode, 'net', `${preset.id}: debe activar el modo red`);
+  assert.ok(custom.panels.length >= 1, `${preset.id}: la red no puede quedar vacía`);
+  assert.equal(custom.panels.filter(p => p.role === 'hero').length, 1, `${preset.id}: debe haber exactamente una cara principal`);
+  const st = { ...netState, custom };
+  const geom = geomOf(st, 0.45);
+  const lay = customLayout(st, 0.45);
+  const pieces = customPieces(st);
+  assert.equal(geom.panels.length, lay.nodes.length, `${preset.id}: paneles 2D y nodos de red deben coincidir`);
+  assert.equal(new Set(geom.panels.map(p => p.panelId)).size, geom.panels.length, `${preset.id}: panelId duplicado`);
+  assert.equal(pieces.length, lay.roots.length, `${preset.id}: una pieza 3D por raíz`);
+  assert.equal(geom.panels.filter(p => p.role === 'hero' && p.surface === 'outside').length, 1, `${preset.id}: cara principal 2D inválida`);
+  const fillBoxes = geom.fills.map(bboxOf);
+  const flat = n => [n, ...(n.kids || []).flatMap(flat)];
+  for (const piece of pieces) {
+    for (const node of flat(piece.tree)) {
+      assert.ok(node.uv && node.uv.length === 4 && node.uv.every(Number.isFinite), `${preset.id}: UV 3D inválida`);
+      assert.ok(node.uv[2] > 0 && node.uv[3] > 0, `${preset.id}: UV 3D no positiva`);
+      const [x, y, w, h] = node.uv, cx = x + w / 2, cy = y + h / 2;
+      assert.ok(fillBoxes.some(b => contains(b, cx, cy)), `${preset.id}: UV 3D fuera de toda cara 2D (${node.panelId || node.shape})`);
+    }
+  }
+}
+
+// Todas las siluetas del editor deben generar 2D y 3D sin romper el contrato.
+for (const shape of ['rect', 'round', 'chamfer', 'arch', 'taper', 'triangle', 'rttri', 'notch', 'wave', 'lid', 'tuck', 'dust', 'ear', 'glue', 'wrap-flap', 'side-tab']) {
+  const custom = {
+    mode: 'net',
+    panels: [
+      { id: 'base', name: 'Fondo', parent: null, edge: 'far', w: 80, h: 40, shape, corner: 6, angle: 90, role: 'hero' }
+    ]
+  };
+  const st = { ...netState, custom };
+  const gg = geomOf(st, 0.45);
+  const pp = customPieces(st);
+  assert.ok(gg.fills.length === 1 && pp.length === 1, `Silueta ${shape}: no genera una cara 2D/3D`);
+}
+
+const converted = toNetCustom({ ...netState, custom: {} });
+assert.equal(converted.mode, 'net', 'La caja rápida debe convertirse en red editable');
+const beforeAdd = converted.panels.length;
+const added = addNetPanel(converted, netState, 'base', 'far', 'dust');
+assert.equal(added.panels.length, beforeAdd + 1, 'Añadir una solapa debe crear una cara');
+const removed = deleteNetPanel(added, added.panels[added.panels.length - 1].id);
+assert.equal(removed.panels.length, beforeAdd, 'Eliminar una solapa debe quitar la cara');
+
+assert.throws(() => makePieces('__unknown__', 80, 40, 120, 0.45, 14), /Tipo de caja desconocido/, 'Un tipo desconocido debe fallar de inmediato, sin volver a otro árbol de plegado');
+console.log(`Comprobación troquel / diseño / 3D superada: ${ids.length} tipos × ${CASES.length} juegos de medidas`);

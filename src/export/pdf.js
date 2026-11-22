@@ -5,6 +5,8 @@ import { geomOf } from '../dieline/geom.js';
 import { drawLayer } from '../design/layers.js';
 import { clipPtsOf } from '../design/containers.js';
 import { TPLS } from '../dieline/templates.js';
+import { itemMatrix, uniqueSheets } from './nesting.js';
+import { saveFile } from '../platform.js';
 
 const enc = new TextEncoder();
 export const pdfByteLength = text => enc.encode(text).length;
@@ -31,10 +33,7 @@ export function writePdf(objs, fname, options = {}) {
   const out = new Uint8Array(len);
   let pos = 0;
   for (const p of parts) { out.set(p, pos); pos += p.length; }
-  const aEl = document.createElement('a');
-  aEl.href = URL.createObjectURL(new Blob([out], { type: 'application/pdf' }));
-  aEl.download = fname;
-  aEl.click();
+  return saveFile(fname, new Blob([out], { type: 'application/pdf' }));
 }
 
 export function pageBoxes(s, g) {
@@ -90,7 +89,7 @@ async function renderArt(s, g, boxes, S, processOnly = false) {
 export async function exportPDF(s, mat, mode = 'cmyk') {
   const professional = mode === 'professional';
   const missing = s.layers.filter(l => l.visible && (l.finish || 'none') === 'none' && l.kind === 'image' && !l.img);
-  if (professional && missing.length) throw new Error('专业净稿未导出：存在 ' + missing.length + ' 个尚未加载的四色图片图层。');
+  if (professional && missing.length) throw new Error('No se exportó el PDF limpio: hay ' + missing.length + ' capas de imagen CMYK sin cargar.');
   const g = geomOf(s, mat.t);
   const boxes = pageBoxes(s, g);
   const { b, ox, oy, Wpt, Hpt, trim, trimRect } = boxes;
@@ -118,8 +117,8 @@ export async function exportPDF(s, mat, mode = 'cmyk') {
   // 专业净稿只保留四色图稿与专色刀线；兼容生产稿/评审稿继续保留可视说明。
   const marks = professional ? '' : '0.4 w 0.55 0.55 0.55 RG [2 2] 0 d ' + trimRect + ' re S [] 0 d\n'
     + 'BT /F1 7 Tf 0.13 0.11 0.09 rg 6 ' + (Hpt - 11).toFixed(2) + ' Td (' + info + ') Tj ET\n'
-    + 'BT /F1 6 Tf 0.78 0.06 0.18 rg 6 ' + (Hpt - 20).toFixed(2) + ' Td (RED = CUT' + (mode === 'cmyk' ? ' / CutContour spot overprint' : '') + ') Tj ET\n'
-    + 'BT /F1 6 Tf 0.18 0.49 0.27 rg 6 ' + (Hpt - 28).toFixed(2) + ' Td (GREEN = CREASE' + (mode === 'cmyk' ? ' / Crease spot' : '') + ' / TRIM ' + b + 'mm dashed) Tj ET\n';
+    + 'BT /F1 6 Tf 0.78 0.06 0.18 rg 6 ' + (Hpt - 20).toFixed(2) + ' Td (ROJO = CORTE' + (mode === 'cmyk' ? ' / CutContour spot' : '') + ') Tj ET\n'
+    + 'BT /F1 6 Tf 0.18 0.49 0.27 rg 6 ' + (Hpt - 28).toFixed(2) + ' Td (VERDE = PLIEGUE' + (mode === 'cmyk' ? ' / Crease spot' : '') + ' / RECORTE ' + b + 'mm) Tj ET\n';
   const content = 'q ' + Wpt.toFixed(2) + ' 0 0 ' + Hpt.toFixed(2) + ' 0 0 cm /Im0 Do Q\n' + marks + dieline;
   const sep = (name, cmyk) => '[ /Separation /' + name + ' /DeviceCMYK << /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [' + cmyk + '] /N 1 >> ]';
   const created = new Date().toISOString();
@@ -147,5 +146,70 @@ export async function exportPDF(s, mat, mode = 'cmyk') {
     objs.push('<< /Type /Metadata /Subtype /XML /Length ' + pdfByteLength(xmp) + ' >>\nstream\n' + xmp + '\nendstream');
   }
   const suffix = professional ? '_professional' : mode === 'cmyk' ? '_cmyk' : '';
-  writePdf(objs, s.tpl + '_' + s.L + 'x' + s.W + 'x' + s.H + suffix + '_print.pdf', professional ? { infoRef: 7 } : {});
+  return writePdf(objs, s.tpl + '_' + s.L + 'x' + s.W + 'x' + s.H + suffix + '_print.pdf', professional ? { infoRef: 7 } : {});
+}
+
+// Plancha(s) con la red repetida: una sola imagen de arte reutilizada por cada colocación,
+// troquel vectorial por pieza y marcas de corte / registro en el margen. Huella de pieza = red + sangrado.
+// info = { margin }. Sin metadatos XMP del modo «professional» (shortcut: solo hacen falta en la salida individual).
+export async function exportNestedPDF(s, mat, mode, res, sheetW, sheetH, info = {}) {
+  const missing = s.layers.filter(l => l.visible && (l.finish || 'none') === 'none' && l.kind === 'image' && !l.img);
+  if (mode === 'professional' && missing.length) throw new Error('No se exportó el PDF limpio: hay ' + missing.length + ' capas de imagen CMYK sin cargar.');
+  const g = geomOf(s, mat.t);
+  const boxes = pageBoxes(s, g);
+  const { ox, oy, Wmm, Hmm, k } = boxes;
+  const cv = await renderArt(s, g, boxes, mode === 'rgb' ? 8 : 300 / 25.4, mode === 'professional');
+  let imgObj;
+  if (mode !== 'rgb') {
+    const cmyk = await zlib(rgbToCmyk(cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data));
+    imgObj = { bin: cmyk, pre: '<< /Type /XObject /Subtype /Image /Width ' + cv.width + ' /Height ' + cv.height + ' /ColorSpace /DeviceCMYK /BitsPerComponent 8 /Filter /FlateDecode /Length ' + cmyk.length + ' >>\nstream\n', post: '\nendstream' };
+  } else {
+    const jpg = Uint8Array.from(atob(cv.toDataURL('image/jpeg', 0.92).split(',')[1]), ch => ch.charCodeAt(0));
+    imgObj = { bin: jpg, pre: '<< /Type /XObject /Subtype /Image /Width ' + cv.width + ' /Height ' + cv.height + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpg.length + ' >>\nstream\n', post: '\nendstream' };
+  }
+  const SWp = sheetW * k, SHp = sheetH * k, f2 = v => v.toFixed(2);
+  const sep = (name, cmyk) => '[ /Separation /' + name + ' /DeviceCMYK << /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [' + cmyk + '] /N 1 >> ]';
+  const resources = '<< /XObject << /Im0 3 0 R >> /ColorSpace << /CS1 ' + sep('CutContour', '0 1 1 0') + ' /CS2 ' + sep('Crease', '1 0 1 0') + ' >> /ExtGState << /OP1 << /OP true /op true /OPM 1 >> >> >>';
+  const m = info.margin || 0;
+  const regCol = mode === 'rgb' ? '0 0 0 RG' : '1 1 1 1 K';
+  // marcas de corte en las esquinas del área útil y dianas de registro en mitad de cada borde (solo si el margen las admite)
+  const marks = m < 6 ? '' : (() => {
+    const P = (x, y) => f2(x * k) + ' ' + f2((sheetH - y) * k), L = (x1, y1, x2, y2) => P(x1, y1) + ' m ' + P(x2, y2) + ' l S\n';
+    let o = regCol + ' 0.25 w\n';
+    for (const [cx, cy, dx, dy] of [[m, m, -1, -1], [sheetW - m, m, 1, -1], [m, sheetH - m, -1, 1], [sheetW - m, sheetH - m, 1, 1]])
+      o += L(cx + dx * 1, cy, cx + dx * 5, cy) + L(cx, cy + dy * 1, cx, cy + dy * 5);
+    const r = 1.5, c = 0.5523 * r;
+    for (const [cx, cy] of [[sheetW / 2, m / 2], [m / 2, sheetH / 2]]) {
+      const x = cx * k, y = (sheetH - cy) * k, R = r * k, C = c * k;
+      o += f2(x + R) + ' ' + f2(y) + ' m ' + [[x + R, y + C, x + C, y + R, x, y + R], [x - C, y + R, x - R, y + C, x - R, y], [x - R, y - C, x - C, y - R, x, y - R], [x + C, y - R, x + R, y - C, x + R, y]].map(a => a.map(f2).join(' ') + ' c').join(' ') + ' S\n';
+      o += L(cx - 3, cy, cx + 3, cy) + L(cx, cy - 3, cx, cy + 3);
+    }
+    return o;
+  })();
+  const pages = uniqueSheets(res).map(u => {
+    let body = '', cuts = '', creases = '';
+    u.items.forEach(p => {
+      const [a, b, c, d, e, f] = itemMatrix(p, Hmm);
+      body += 'q ' + [Wmm * a * k, -Wmm * b * k, -Hmm * c * k, Hmm * d * k, (e + c * Hmm) * k, (sheetH - f - d * Hmm) * k].map(f2).join(' ') + ' cm /Im0 Do Q\n';
+      const pt = q => { const u2 = q[0] - ox, v2 = q[1] - oy; return f2((a * u2 + c * v2 + e) * k) + ' ' + f2((sheetH - (b * u2 + d * v2 + f)) * k); };
+      const path = sg => sg.pts.map((q, i) => pt(q) + (i ? ' l' : ' m')).join(' ') + ' S\n';
+      g.segs.forEach(sg => { if (sg.t === 'cut') cuts += path(sg); else if (sg.t === 'crease') creases += path(sg); });
+    });
+    const dieline = mode !== 'rgb'
+      ? '/OP1 gs\n/CS2 CS 1 SCN 0.9 w\n' + creases + '/CS1 CS 1 SCN 0.9 w\n' + cuts
+      : '0.9 w 0.18 0.49 0.27 RG\n' + creases + '0.9 w 0.78 0.06 0.18 RG\n' + cuts;
+    return { content: body + marks + dieline, repeat: u.repeat };
+  });
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R /ViewerPreferences << /PrintScaling /None >> >>',
+    '<< /Type /Pages /Kids [' + pages.map((_, i) => (5 + 2 * i) + ' 0 R').join(' ') + '] /Count ' + pages.length + ' >>',
+    imgObj,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+  ];
+  pages.forEach((pg, i) => {
+    const box = '[0 0 ' + f2(SWp) + ' ' + f2(SHp) + ']';
+    objs.push('<< /Type /Page /Parent 2 0 R /MediaBox ' + box + ' /TrimBox ' + box + ' /BleedBox ' + box + ' /CropBox ' + box + ' /Resources ' + resources + ' /Contents ' + (6 + 2 * i) + ' 0 R >>');
+    objs.push(pdfTextStream(pg.content));
+  });
+  return writePdf(objs, 'nesting_' + s.tpl + '_' + s.L + 'x' + s.W + 'x' + s.H + '_' + res.count + 'pzs_print.pdf');
 }

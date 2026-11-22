@@ -4,22 +4,24 @@ import { drawLayer } from '../design/layers.js';
 import { composeEmbossChannels } from '../design/emboss.js';
 import { clipPtsOf } from '../design/containers.js';
 import { writePdf, pageBoxes, zlib, pdfTextStream } from './pdf.js';
+import { notify } from '../ui/dialogs.jsx';
+import { t } from '../i18n/index.js';
 
 export async function exportSeparations(s, mat) {
   await document.fonts.ready;
   const missing = s.layers.filter(l => l.visible && l.finish && l.finish !== 'none' && l.kind === 'image' && !l.img);
-  if (missing.length) throw new Error('工艺分版未导出：存在 ' + missing.length + ' 个尚未加载的工艺图片图层。');
+  if (missing.length) throw new Error('No se exportaron las separaciones: hay ' + missing.length + ' capas de imagen de acabado sin cargar.');
   const g = geomOf(s, mat.t);
   const { b, ox, oy, Wmm, Hmm, k, Wpt, Hpt, trim, trimRect } = pageBoxes(s, g);
   const S = 300 / 25.4;
   const emboss = composeEmbossChannels({ layers: s.layers.filter(l => l.visible && l.finish === 'emboss'), panels: g.panels, W: Math.round(Wmm * S), H: Math.round(Hmm * S), S, ox, oy, fallbackDir: s.embDir });
   const PROCS = [
-    { key: 'foil', match: l => l.finish === 'foil' || l.finish === 'silver', label: 'HOT-FOIL', cn: '烫金版' },
-    { key: 'uv', match: l => l.finish === 'uv', label: 'SPOT-UV', cn: 'UV版' },
-    { key: 'gloss', match: l => l.finish === 'gloss', label: 'SPOT-GLOSS', cn: '亮面版' },
-    { key: 'holo', match: l => l.finish === 'holo', label: 'HOLO-FOIL', cn: '镭射版' },
-    { key: 'emboss-up', mask: emboss.up, exists: emboss.hasUp, label: 'EMBOSS UP ' + s.embDepth + 'MM', cn: '击凸版' },
-    { key: 'emboss-down', mask: emboss.down, exists: emboss.hasDown, label: 'EMBOSS DOWN ' + s.embDepth + 'MM', cn: '击凹版' }
+    { key: 'foil', match: l => l.finish === 'foil' || l.finish === 'silver', label: 'HOT-FOIL', cn: 'Plancha oro' },
+    { key: 'uv', match: l => l.finish === 'uv', label: 'SPOT-UV', cn: 'Plancha UV' },
+    { key: 'gloss', match: l => l.finish === 'gloss', label: 'SPOT-GLOSS', cn: 'Plancha brillo' },
+    { key: 'holo', match: l => l.finish === 'holo', label: 'HOLO-FOIL', cn: 'Plancha holográfica' },
+    { key: 'emboss-up', mask: emboss.up, exists: emboss.hasUp, label: 'EMBOSS UP ' + s.embDepth + 'MM', cn: 'Plancha relieve ↑' },
+    { key: 'emboss-down', mask: emboss.down, exists: emboss.hasDown, label: 'EMBOSS DOWN ' + s.embDepth + 'MM', cn: 'Plancha hundido ↓' }
   ];
   const base = s.tpl + '_' + s.L + 'x' + s.W + 'x' + s.H;
   let made = 0;
@@ -44,7 +46,7 @@ export async function exportSeparations(s, mat) {
       + '0.35 w 0.6 0.6 0.6 RG [1.5 1.5] 0 d\n' + outline + '\n[] 0 d\n'
       + '0.35 w 0.55 0.55 0.55 RG [2 2] 0 d ' + trimRect + ' re S [] 0 d\n'
       + 'BT /F1 7 Tf 0 0 0 rg 6 ' + (Hpt - 11).toFixed(2) + ' Td (' + proc.label + ' PLATE  ' + base + '  1:1  BLACK = PROCESS AREA) Tj ET';
-    writePdf([
+    await writePdf([ // one save dialog at a time
       '<< /Type /Catalog /Pages 2 0 R >>',
       '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
       '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + Wpt.toFixed(2) + ' ' + Hpt.toFixed(2) + '] /TrimBox [' + trim + '] /BleedBox [0 0 ' + Wpt.toFixed(2) + ' ' + Hpt.toFixed(2) + '] /CropBox [0 0 ' + Wpt.toFixed(2) + ' ' + Hpt.toFixed(2) + '] /Resources << /XObject << /Im0 4 0 R >> /Font << /F1 5 0 R >> >> /Contents 6 0 R >>',
@@ -53,5 +55,5 @@ export async function exportSeparations(s, mat) {
       pdfTextStream(content)
     ], base + '_' + proc.key + '_plate.pdf');
   }
-  if (!made) alert('没有可分版的工艺图层：请先在「设计」页为图层指定烫金/UV/亮面/压纹/镭射工艺。');
+  if (!made) notify(t('No hay capas de acabado que separar. Asigna oro / UV local / brillo / relieve / holográfico a alguna capa en «Diseño».'));
 }

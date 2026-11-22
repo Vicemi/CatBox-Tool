@@ -1,5 +1,7 @@
-// UI 基础件：开关、区块、按钮、输入样式（按原型设计语汇）
+// Piezas base de interfaz: interruptores, bloques, botones y estilos de entrada.
 import React, { useState } from 'react';
+import { mmToCm, parseCm } from '../units.js';
+import { useT } from '../i18n/index.js';
 
 export const C = { ink: '#211d18', brand: '#9a5b1f', gold: '#C9A227', paper: '#f5f1e8', panel: '#faf7f0', bd: '#d8d0c2', bd2: '#e7e0d4', mut: '#8a8071', dim: '#5c554a' };
 
@@ -37,6 +39,37 @@ export function NumField({ label, value, onChange, step, style }) {
     <div style={style}>
       <div style={{ fontSize: 10.5, color: C.mut, marginBottom: 3 }}>{label}</div>
       <input type="number" step={step} value={value} onChange={e => onChange(e)} style={inputSt} />
+    </div>
+  );
+}
+
+// Campo en centímetros: guarda mm por dentro, muestra cm por fuera.
+export function CmField({ label, mm, min, max, step = 0.1, onChange, style }) {
+  const commit = e => {
+    const v = parseCm(e.target.value);
+    if (!Number.isFinite(v)) return;
+    const lo = min == null ? -Infinity : min, hi = max == null ? Infinity : max;
+    onChange(Math.min(hi, Math.max(lo, v)));
+  };
+  return (
+    <div style={style}>
+      <div style={{ fontSize: 10.5, color: C.mut, marginBottom: 3 }}>{label} <span style={{ opacity: 0.65 }}>cm</span></div>
+      <input type="number" step={step} value={mmToCm(mm)} onChange={commit} style={inputSt} />
+    </div>
+  );
+}
+
+export function MmField({ label, mm, min, max, step = 0.1, onChange, style }) {
+  const commit = e => {
+    const v = parseFloat(e.target.value);
+    if (!Number.isFinite(v)) return;
+    const lo = min == null ? -Infinity : min, hi = max == null ? Infinity : max;
+    onChange(Math.min(hi, Math.max(lo, v)));
+  };
+  return (
+    <div style={style}>
+      <div style={{ fontSize: 10.5, color: C.mut, marginBottom: 3 }}>{label} <span style={{ opacity: 0.65 }}>mm</span></div>
+      <input type="number" step={step} value={mm} onChange={commit} style={inputSt} />
     </div>
   );
 }
@@ -90,6 +123,7 @@ export function ColorRow({ label, value, onChange }) {
 const clampStep = (v, min, max, step) => Math.min(max, Math.max(min, +(Math.round(v / step) * step).toFixed(6)));
 
 export function Range({ label, value, min, max, step = 0.01, suffix = '', onChange }) {
+  const t = useT();
   const dec = step < 0.1 ? 2 : (step % 1 ? 1 : 0);
   const [draft, setDraft] = useState(null); // 编辑中草稿；null=跟随滑杆值
   const commit = () => {
@@ -104,7 +138,7 @@ export function Range({ label, value, min, max, step = 0.01, suffix = '', onChan
     <div style={{ fontSize: 10.5, color: '#8a8071', marginBottom: 3 }}>{label}</div>
     <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
       <input aria-label={label} type="range" value={value} min={min} max={max} step={step} onInput={e => onChange(+e.currentTarget.value)} style={{ flex: 1, minWidth: 0, accentColor: '#9a5b1f', margin: 0 }} />
-      <input aria-label={label + ' 数值'} inputMode="decimal" value={draft !== null ? draft : Number(value).toFixed(dec)}
+      <input aria-label={label + ' ' + t('valor')} inputMode="decimal" value={draft !== null ? draft : Number(value).toFixed(dec)}
         onChange={e => setDraft(e.target.value)} onBlur={commit}
         onKeyDown={e => { if (e.key === 'Enter') { commit(); e.currentTarget.blur(); } else if (e.key === 'Escape') { setDraft(null); e.currentTarget.blur(); } }}
         style={{ ...monoSt, width: 46, flex: 'none', padding: '2px 4px', textAlign: 'right', border: '1px solid #d8d0c2', borderRadius: 4, background: '#fff' }} />

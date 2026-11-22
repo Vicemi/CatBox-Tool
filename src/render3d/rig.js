@@ -16,14 +16,14 @@ const BG_MODES = ['gradient', 'hdri', 'color'];
 const CAMERA_PROJECTIONS = ['perspective', 'orthographic'];
 const STAGE_IDS = STAGES.map(x => x.id);
 const LIGHT_TYPES = ['directional', 'point', 'hemi'];
-const LIGHT_TYPE_NAMES = { directional: '平行光', point: '点光', hemi: '环境补光' };
+const LIGHT_TYPE_NAMES = { directional: 'Luz direccional', point: 'Luz puntual', hemi: 'Relleno ambiental' };
 const MAX_INTENSITY = { directional: 4, point: 2, hemi: 1 }; // point 为 UI 语义强度，lighting.js 内部再乘 POINT_SCALE
 
 // 内置场景库（数值取自调研：RoomEnvironment 强度配比、产品摄影三点布光、packshot 焦距、金属 F0 色温）
 // 顶光 az/el 由旧固定位置 (40,420,40) 换算；key distance 408 沿用旧多样本软阴影基距
 export const SCENE_PRESETS = [
   {
-    id: 'lab-default', name: '默认场景',
+    id: 'lab-default', name: 'Escena por defecto',
     environment: {
       source: 'procedural', intensity: 0.65, rotation: 0, background: 'color', backgroundColor: '#ffffff', backgroundBlur: 0.18,
       dome: { colors: ['#dce7ec', '#56616a', '#181a1c'], bg: ['#f13a2b', '#d72419', '#8b130e'], softboxes: [
@@ -33,17 +33,17 @@ export const SCENE_PRESETS = [
       ] }
     },
     lights: [
-      { id: 'key', name: '正面主光', type: 'directional', on: true, intensity: 1.15, color: '#fff1e3', groundColor: '#68645d', azimuth: 51, elevation: 28, distance: 408, shadow: true, areaIntensity: 0, areaWidth: 145, areaHeight: 115, areaTargetY: 42 },
-      { id: 'key2', name: '正面主光 副本', type: 'directional', on: true, intensity: 1.35, color: '#fff1e3', groundColor: '#68645d', azimuth: 93, elevation: 5, distance: 408, shadow: false, areaIntensity: 0, areaWidth: 145, areaHeight: 115, areaTargetY: 42 },
-      { id: 'fill', name: '右侧弱填充', type: 'directional', on: true, intensity: 0.79, color: '#d7efff', groundColor: '#68645d', azimuth: 95, elevation: 25, distance: 400, shadow: false, areaIntensity: 0, areaWidth: 145, areaHeight: 115, areaTargetY: 42 },
-      { id: 'rim', name: '冷色轮廓光', type: 'directional', on: true, intensity: 0.7, color: '#bfeaff', groundColor: '#68645d', azimuth: -55, elevation: 34, distance: 400, shadow: false, areaIntensity: 0, areaWidth: 145, areaHeight: 115, areaTargetY: 42 },
-      { id: 'top', name: '顶光', type: 'directional', on: true, intensity: 0.67, color: '#fff8ef', groundColor: '#68645d', azimuth: 45, elevation: 82.3, distance: 400, shadow: false, areaIntensity: 0, areaWidth: 145, areaHeight: 115, areaTargetY: 42 },
-      { id: 'hemi', name: '环境补光', type: 'hemi', on: true, intensity: 1, color: '#ffffff', groundColor: '#68645d', azimuth: 0, elevation: 90, distance: 400, shadow: false, areaIntensity: 0, areaWidth: 145, areaHeight: 115, areaTargetY: 42 }
+      { id: 'key', name: 'Luz principal frontal', type: 'directional', on: true, intensity: 1.15, color: '#fff1e3', groundColor: '#68645d', azimuth: 51, elevation: 28, distance: 408, shadow: true, areaIntensity: 0, areaWidth: 145, areaHeight: 115, areaTargetY: 42 },
+      { id: 'key2', name: 'Luz principal frontal copia', type: 'directional', on: true, intensity: 1.35, color: '#fff1e3', groundColor: '#68645d', azimuth: 93, elevation: 5, distance: 408, shadow: false, areaIntensity: 0, areaWidth: 145, areaHeight: 115, areaTargetY: 42 },
+      { id: 'fill', name: 'Relleno tenue derecho', type: 'directional', on: true, intensity: 0.79, color: '#d7efff', groundColor: '#68645d', azimuth: 95, elevation: 25, distance: 400, shadow: false, areaIntensity: 0, areaWidth: 145, areaHeight: 115, areaTargetY: 42 },
+      { id: 'rim', name: 'Contorno frío', type: 'directional', on: true, intensity: 0.7, color: '#bfeaff', groundColor: '#68645d', azimuth: -55, elevation: 34, distance: 400, shadow: false, areaIntensity: 0, areaWidth: 145, areaHeight: 115, areaTargetY: 42 },
+      { id: 'top', name: 'Luz cenital', type: 'directional', on: true, intensity: 0.67, color: '#fff8ef', groundColor: '#68645d', azimuth: 45, elevation: 82.3, distance: 400, shadow: false, areaIntensity: 0, areaWidth: 145, areaHeight: 115, areaTargetY: 42 },
+      { id: 'hemi', name: 'Relleno ambiental', type: 'hemi', on: true, intensity: 1, color: '#ffffff', groundColor: '#68645d', azimuth: 0, elevation: 90, distance: 400, shadow: false, areaIntensity: 0, areaWidth: 145, areaHeight: 115, areaTargetY: 42 }
     ],
     shadow: { softness: 22, opacity: 0.28 }, tone: { mapping: 'neutral', exposure: 1.1 }, camera: { projection: 'perspective', fov: 27 }, stage: 'none'
   },
   {
-    id: 'packshot-white', name: '电商白棚',
+    id: 'packshot-white', name: 'Plató blanco ecommerce',
     environment: {
       source: 'white_studio_03', intensity: 0.9, rotation: 0, background: 'hdri', backgroundColor: '#f4f4f2', backgroundBlur: 0.25,
       dome: { colors: ['#e8e8e6', '#a6a5a1', '#54524e'], bg: ['#f4f4f2', '#e3e3e1', '#cdcdcb'], softboxes: [
@@ -54,28 +54,28 @@ export const SCENE_PRESETS = [
       ] }
     },
     lights: [
-      { id: 'key', name: '主光', type: 'directional', on: true, intensity: 2.0, color: '#fff4e6', azimuth: 35, elevation: 50, distance: 408, shadow: true },
-      { id: 'fill', name: '辅光', type: 'directional', on: true, intensity: 0.5, color: '#eef2f8', azimuth: -50, elevation: 30, distance: 400, shadow: false },
-      { id: 'rim', name: '轮廓光', type: 'directional', on: true, intensity: 0.4, color: '#ffffff', azimuth: -140, elevation: 55, distance: 400, shadow: false },
-      { id: 'top', name: '顶光', type: 'directional', on: true, intensity: 0.8, color: '#ffffff', azimuth: 45, elevation: 82.3, distance: 400, shadow: false },
-      { id: 'hemi', name: '环境补光', type: 'hemi', on: true, intensity: 0.1, color: '#f2f3f2', azimuth: 0, elevation: 90, distance: 400, shadow: false }
+      { id: 'key', name: 'Luz principal', type: 'directional', on: true, intensity: 2.0, color: '#fff4e6', azimuth: 35, elevation: 50, distance: 408, shadow: true },
+      { id: 'fill', name: 'Luz de relleno', type: 'directional', on: true, intensity: 0.5, color: '#eef2f8', azimuth: -50, elevation: 30, distance: 400, shadow: false },
+      { id: 'rim', name: 'Luz de contorno', type: 'directional', on: true, intensity: 0.4, color: '#ffffff', azimuth: -140, elevation: 55, distance: 400, shadow: false },
+      { id: 'top', name: 'Luz cenital', type: 'directional', on: true, intensity: 0.8, color: '#ffffff', azimuth: 45, elevation: 82.3, distance: 400, shadow: false },
+      { id: 'hemi', name: 'Relleno ambiental', type: 'hemi', on: true, intensity: 0.1, color: '#f2f3f2', azimuth: 0, elevation: 90, distance: 400, shadow: false }
     ],
     shadow: { softness: 14, opacity: 0.16 }, tone: { mapping: 'neutral', exposure: 1.05 }, camera: { fov: 27 }, stage: 'none'
   },
   {
-    id: 'neutral-proof', name: '中性校样',
+    id: 'neutral-proof', name: 'Prueba neutra',
     environment: { source: 'studio_small_08', intensity: 0.36, rotation: 0, background: 'gradient', backgroundColor: '#e1dfda', backgroundBlur: 0.35, dome: DOME_PRESETS['neutral-proof'] },
     lights: [
-      { id: 'key', name: '主光', type: 'directional', on: true, intensity: 1.8, color: '#fff6e9', azimuth: 30, elevation: 54, distance: 408, shadow: true },
-      { id: 'fill', name: '辅光', type: 'directional', on: true, intensity: 0.08, color: '#e6edf7', azimuth: 155.2, elevation: 27.6, distance: 400, shadow: false }, // 由旧固定位置 (-260,150,120) 换算
-      { id: 'rim', name: '轮廓光', type: 'directional', on: true, intensity: 0.24, color: '#ffffff', azimuth: -77, elevation: 50.2, distance: 400, shadow: false }, // 由旧固定位置 (60,320,-260) 换算
-      { id: 'top', name: '顶光', type: 'directional', on: false, intensity: 0, color: '#ffffff', azimuth: 45, elevation: 82.3, distance: 400, shadow: false },
-      { id: 'hemi', name: '环境补光', type: 'hemi', on: true, intensity: 0.04, color: '#f2f3f2', azimuth: 0, elevation: 90, distance: 400, shadow: false }
+      { id: 'key', name: 'Luz principal', type: 'directional', on: true, intensity: 1.8, color: '#fff6e9', azimuth: 30, elevation: 54, distance: 408, shadow: true },
+      { id: 'fill', name: 'Luz de relleno', type: 'directional', on: true, intensity: 0.08, color: '#e6edf7', azimuth: 155.2, elevation: 27.6, distance: 400, shadow: false }, // 由旧固定位置 (-260,150,120) 换算
+      { id: 'rim', name: 'Luz de contorno', type: 'directional', on: true, intensity: 0.24, color: '#ffffff', azimuth: -77, elevation: 50.2, distance: 400, shadow: false }, // 由旧固定位置 (60,320,-260) 换算
+      { id: 'top', name: 'Luz cenital', type: 'directional', on: false, intensity: 0, color: '#ffffff', azimuth: 45, elevation: 82.3, distance: 400, shadow: false },
+      { id: 'hemi', name: 'Relleno ambiental', type: 'hemi', on: true, intensity: 0.04, color: '#f2f3f2', azimuth: 0, elevation: 90, distance: 400, shadow: false }
     ],
     shadow: { softness: 20, opacity: 0.23 }, tone: { mapping: 'aces', exposure: 1.0 }, camera: { fov: 35 }, stage: 'none'
   },
   {
-    id: 'high-key', name: '明亮展示棚',
+    id: 'high-key', name: 'Plató luminoso',
     environment: {
       source: 'procedural', intensity: 0.92, rotation: 0, background: 'gradient', backgroundColor: '#fbfbfa', backgroundBlur: 0.18,
       dome: { colors: ['#f4f5f4', '#a8aaa8', '#4b4d4c'], bg: ['#ffffff', '#f7f7f5', '#e7e7e4'], softboxes: [
@@ -86,16 +86,16 @@ export const SCENE_PRESETS = [
       ] }
     },
     lights: [
-      { id: 'key', name: '正面大柔光', type: 'directional', on: true, intensity: 1.85, color: '#fff7ef', azimuth: 78, elevation: 36, distance: 408, shadow: true },
-      { id: 'fill', name: '右侧填充', type: 'directional', on: true, intensity: 0.4, color: '#e8f2ff', azimuth: 22, elevation: 28, distance: 400, shadow: false },
-      { id: 'rim', name: '轮廓光', type: 'directional', on: true, intensity: 0.28, color: '#eef7ff', azimuth: -55, elevation: 35, distance: 400, shadow: false },
-      { id: 'top', name: '顶光', type: 'directional', on: true, intensity: 0.15, color: '#ffffff', azimuth: 45, elevation: 82.3, distance: 400, shadow: false },
-      { id: 'hemi', name: '环境补光', type: 'hemi', on: true, intensity: 0.16, color: '#f2f3f2', azimuth: 0, elevation: 90, distance: 400, shadow: false }
+      { id: 'key', name: 'Softbox frontal grande', type: 'directional', on: true, intensity: 1.85, color: '#fff7ef', azimuth: 78, elevation: 36, distance: 408, shadow: true },
+      { id: 'fill', name: 'Relleno derecho', type: 'directional', on: true, intensity: 0.4, color: '#e8f2ff', azimuth: 22, elevation: 28, distance: 400, shadow: false },
+      { id: 'rim', name: 'Luz de contorno', type: 'directional', on: true, intensity: 0.28, color: '#eef7ff', azimuth: -55, elevation: 35, distance: 400, shadow: false },
+      { id: 'top', name: 'Luz cenital', type: 'directional', on: true, intensity: 0.15, color: '#ffffff', azimuth: 45, elevation: 82.3, distance: 400, shadow: false },
+      { id: 'hemi', name: 'Relleno ambiental', type: 'hemi', on: true, intensity: 0.16, color: '#f2f3f2', azimuth: 0, elevation: 90, distance: 400, shadow: false }
     ],
     shadow: { softness: 12, opacity: 0.18 }, tone: { mapping: 'neutral', exposure: 1.08 }, camera: { fov: 30 }, stage: 'none'
   },
   {
-    id: 'warm-boutique', name: '暖调精品',
+    id: 'warm-boutique', name: 'Boutique cálida',
     environment: {
       source: 'studio_small_09', intensity: 0.9, rotation: 0, background: 'gradient', backgroundColor: '#efe7da', backgroundBlur: 0.35,
       dome: { colors: ['#e3d9c8', '#8f8271', '#38322a'], bg: ['#efe7da', '#dcd0be', '#c2b3a0'], softboxes: [
@@ -106,16 +106,16 @@ export const SCENE_PRESETS = [
       ] }
     },
     lights: [
-      { id: 'key', name: '主光', type: 'directional', on: true, intensity: 2.2, color: '#ffd9a4', azimuth: 40, elevation: 48, distance: 408, shadow: true }, // ≈3200K 暖主光
-      { id: 'fill', name: '辅光', type: 'directional', on: true, intensity: 0.3, color: '#cfe0ff', azimuth: -55, elevation: 28, distance: 400, shadow: false }, // 冷辅光对撞
-      { id: 'rim', name: '轮廓光', type: 'directional', on: true, intensity: 0.55, color: '#ffe9c9', azimuth: -120, elevation: 50, distance: 400, shadow: false },
-      { id: 'top', name: '顶光', type: 'directional', on: true, intensity: 0.5, color: '#ffffff', azimuth: 45, elevation: 82.3, distance: 400, shadow: false },
-      { id: 'hemi', name: '环境补光', type: 'hemi', on: true, intensity: 0.06, color: '#f2f3f2', azimuth: 0, elevation: 90, distance: 400, shadow: false }
+      { id: 'key', name: 'Luz principal', type: 'directional', on: true, intensity: 2.2, color: '#ffd9a4', azimuth: 40, elevation: 48, distance: 408, shadow: true }, // ≈3200K 暖主光
+      { id: 'fill', name: 'Luz de relleno', type: 'directional', on: true, intensity: 0.3, color: '#cfe0ff', azimuth: -55, elevation: 28, distance: 400, shadow: false }, // 冷辅光对撞
+      { id: 'rim', name: 'Luz de contorno', type: 'directional', on: true, intensity: 0.55, color: '#ffe9c9', azimuth: -120, elevation: 50, distance: 400, shadow: false },
+      { id: 'top', name: 'Luz cenital', type: 'directional', on: true, intensity: 0.5, color: '#ffffff', azimuth: 45, elevation: 82.3, distance: 400, shadow: false },
+      { id: 'hemi', name: 'Relleno ambiental', type: 'hemi', on: true, intensity: 0.06, color: '#f2f3f2', azimuth: 0, elevation: 90, distance: 400, shadow: false }
     ],
     shadow: { softness: 18, opacity: 0.26 }, tone: { mapping: 'agx', exposure: 1.04 }, camera: { fov: 30 }, stage: 'wood_table_001'
   },
   {
-    id: 'poster-red', name: '海报红棚',
+    id: 'poster-red', name: 'Plató rojo cartel',
     environment: {
       source: 'procedural', intensity: 0.65, rotation: 0, background: 'gradient', backgroundColor: '#df291d', backgroundBlur: 0.18,
       dome: { colors: ['#dce7ec', '#56616a', '#181a1c'], bg: ['#f13a2b', '#d72419', '#8b130e'], softboxes: [
@@ -125,28 +125,28 @@ export const SCENE_PRESETS = [
       ] }
     },
     lights: [
-      { id: 'key', name: '正面主光', type: 'directional', on: true, intensity: 2.15, color: '#fff1e3', azimuth: 78, elevation: 33, distance: 408, shadow: true },
-      { id: 'fill', name: '右侧弱填充', type: 'directional', on: true, intensity: 0.27, color: '#d7efff', azimuth: 22, elevation: 26, distance: 400, shadow: false },
-      { id: 'rim', name: '冷色轮廓光', type: 'directional', on: true, intensity: 0.3, color: '#bfeaff', azimuth: -55, elevation: 34, distance: 400, shadow: false },
-      { id: 'top', name: '顶光', type: 'directional', on: true, intensity: 0.14, color: '#fff8ef', azimuth: 45, elevation: 82.3, distance: 400, shadow: false },
-      { id: 'hemi', name: '环境补光', type: 'hemi', on: true, intensity: 0.1, color: '#f2f3f2', azimuth: 0, elevation: 90, distance: 400, shadow: false }
+      { id: 'key', name: 'Luz principal frontal', type: 'directional', on: true, intensity: 2.15, color: '#fff1e3', azimuth: 78, elevation: 33, distance: 408, shadow: true },
+      { id: 'fill', name: 'Relleno tenue derecho', type: 'directional', on: true, intensity: 0.27, color: '#d7efff', azimuth: 22, elevation: 26, distance: 400, shadow: false },
+      { id: 'rim', name: 'Contorno frío', type: 'directional', on: true, intensity: 0.3, color: '#bfeaff', azimuth: -55, elevation: 34, distance: 400, shadow: false },
+      { id: 'top', name: 'Luz cenital', type: 'directional', on: true, intensity: 0.14, color: '#fff8ef', azimuth: 45, elevation: 82.3, distance: 400, shadow: false },
+      { id: 'hemi', name: 'Relleno ambiental', type: 'hemi', on: true, intensity: 0.1, color: '#f2f3f2', azimuth: 0, elevation: 90, distance: 400, shadow: false }
     ],
     shadow: { softness: 9, opacity: 0.28 }, tone: { mapping: 'neutral', exposure: 1.1 }, camera: { projection: 'perspective', fov: 27 }, stage: 'none'
   },
   {
-    id: 'dark-craft', name: '深色工艺',
+    id: 'dark-craft', name: 'Artesanía oscura',
     environment: { source: 'studio_small_08', intensity: 1.1, rotation: 0, background: 'gradient', backgroundColor: '#45433f', backgroundBlur: 0.35, dome: DOME_PRESETS['dark-craft'] },
     lights: [
-      { id: 'key', name: '主光', type: 'directional', on: true, intensity: 2.05, color: '#fff6e9', azimuth: 30, elevation: 54, distance: 408, shadow: true },
-      { id: 'fill', name: '辅光', type: 'directional', on: true, intensity: 0.55, color: '#e6edf7', azimuth: 155.2, elevation: 27.6, distance: 400, shadow: false },
-      { id: 'rim', name: '轮廓光', type: 'directional', on: true, intensity: 0.65, color: '#ffffff', azimuth: -77, elevation: 50.2, distance: 400, shadow: false },
-      { id: 'top', name: '顶光', type: 'directional', on: false, intensity: 0, color: '#ffffff', azimuth: 45, elevation: 82.3, distance: 400, shadow: false },
-      { id: 'hemi', name: '环境补光', type: 'hemi', on: true, intensity: 0.25, color: '#f2f3f2', azimuth: 0, elevation: 90, distance: 400, shadow: false }
+      { id: 'key', name: 'Luz principal', type: 'directional', on: true, intensity: 2.05, color: '#fff6e9', azimuth: 30, elevation: 54, distance: 408, shadow: true },
+      { id: 'fill', name: 'Luz de relleno', type: 'directional', on: true, intensity: 0.55, color: '#e6edf7', azimuth: 155.2, elevation: 27.6, distance: 400, shadow: false },
+      { id: 'rim', name: 'Luz de contorno', type: 'directional', on: true, intensity: 0.65, color: '#ffffff', azimuth: -77, elevation: 50.2, distance: 400, shadow: false },
+      { id: 'top', name: 'Luz cenital', type: 'directional', on: false, intensity: 0, color: '#ffffff', azimuth: 45, elevation: 82.3, distance: 400, shadow: false },
+      { id: 'hemi', name: 'Relleno ambiental', type: 'hemi', on: true, intensity: 0.25, color: '#f2f3f2', azimuth: 0, elevation: 90, distance: 400, shadow: false }
     ],
     shadow: { softness: 17, opacity: 0.28 }, tone: { mapping: 'aces', exposure: 1.14 }, camera: { fov: 35 }, stage: 'none'
   },
   {
-    id: 'cool-metal', name: '冷调金属',
+    id: 'cool-metal', name: 'Metal frío',
     environment: {
       source: 'studio_small_03', intensity: 0.85, rotation: 0, background: 'gradient', backgroundColor: '#e8ebef', backgroundBlur: 0.35,
       dome: { colors: ['#dde2e8', '#878e97', '#33363b'], bg: ['#e8ebef', '#d3d8de', '#b6bcc4'], softboxes: [
@@ -157,15 +157,33 @@ export const SCENE_PRESETS = [
       ] }
     },
     lights: [
-      { id: 'key', name: '主光', type: 'directional', on: true, intensity: 2.5, color: '#f4f7ff', azimuth: 25, elevation: 62, distance: 408, shadow: true },
-      { id: 'fill', name: '辅光', type: 'directional', on: true, intensity: 0.2, color: '#dfe8f5', azimuth: -55, elevation: 30, distance: 400, shadow: false },
-      { id: 'rim', name: '轮廓光', type: 'directional', on: true, intensity: 0.85, color: '#ffffff', azimuth: -140, elevation: 60, distance: 400, shadow: false },
-      { id: 'top', name: '顶光', type: 'directional', on: true, intensity: 1.0, color: '#ffffff', azimuth: 45, elevation: 82.3, distance: 400, shadow: false },
-      { id: 'hemi', name: '环境补光', type: 'hemi', on: true, intensity: 0.05, color: '#f2f3f2', azimuth: 0, elevation: 90, distance: 400, shadow: false }
+      { id: 'key', name: 'Luz principal', type: 'directional', on: true, intensity: 2.5, color: '#f4f7ff', azimuth: 25, elevation: 62, distance: 408, shadow: true },
+      { id: 'fill', name: 'Luz de relleno', type: 'directional', on: true, intensity: 0.2, color: '#dfe8f5', azimuth: -55, elevation: 30, distance: 400, shadow: false },
+      { id: 'rim', name: 'Luz de contorno', type: 'directional', on: true, intensity: 0.85, color: '#ffffff', azimuth: -140, elevation: 60, distance: 400, shadow: false },
+      { id: 'top', name: 'Luz cenital', type: 'directional', on: true, intensity: 1.0, color: '#ffffff', azimuth: 45, elevation: 82.3, distance: 400, shadow: false },
+      { id: 'hemi', name: 'Relleno ambiental', type: 'hemi', on: true, intensity: 0.05, color: '#f2f3f2', azimuth: 0, elevation: 90, distance: 400, shadow: false }
     ],
     shadow: { softness: 12, opacity: 0.2 }, tone: { mapping: 'aces', exposure: 1.02 }, camera: { fov: 27 }, stage: 'checkered_pavement_tiles'
   }
 ];
+
+// Entornos curados: escena base (luces/HDRI) + suelo/ciclorama + fondo. Se aplican como un rig normal y siguen siendo editables.
+// sw = [suelo, pared] para la tarjeta; bg = [modo, color]; env = ajustes extra del entorno
+export const ENTORNOS = [
+  { id: 'ecom', name: 'Plató blanco e-commerce', icon: 'IconCamera', sw: ['#ffffff', '#e9e9e6'], base: 'packshot-white', stage: 'cyclorama', bg: ['color', '#f4f4f2'] },
+  { id: 'wood', name: 'Mesa de madera cálida', icon: 'IconArmchair', sw: ['#8a5a34', '#efe7da'], base: 'warm-boutique', stage: 'wood_table_001', bg: ['gradient', '#efe7da'] },
+  { id: 'loft', name: 'Loft de hormigón', icon: 'IconBuildingWarehouse', sw: ['#9a9892', '#d8d6d1'], base: 'neutral-proof', stage: 'climbing_wall_base', bg: ['gradient', '#d8d6d1'], env: { intensity: 0.5 } },
+  { id: 'plaster', name: 'Yeso pintado claro', icon: 'IconWall', sw: ['#ece8e1', '#f4f1ec'], base: 'high-key', stage: 'painted_plaster_wall', bg: ['gradient', '#efece6'] },
+  { id: 'dark', name: 'Oscuro premium', icon: 'IconMoon', sw: ['#1d1b19', '#34312e'], base: 'dark-craft', stage: 'cyclorama', bg: ['color', '#2b2926'] },
+  { id: 'rose', name: 'Pastel rosa', icon: 'IconPalette', sw: ['#f1c9c4', '#f8e1de'], base: 'high-key', stage: 'cyclorama', bg: ['color', '#f1c9c4'] },
+  { id: 'mint', name: 'Pastel menta', icon: 'IconPalette', sw: ['#bfe0d2', '#dcf1e8'], base: 'high-key', stage: 'cyclorama', bg: ['color', '#bfe0d2'] },
+  { id: 'kraft', name: 'Mostrador kraft', icon: 'IconShoppingBag', sw: ['#c9a878', '#e4d2b2'], base: 'warm-boutique', stage: 'crepe_satin', bg: ['gradient', '#e4d2b2'] },
+  { id: 'sun', name: 'Luz dura de día', icon: 'IconSun', sw: ['#d9cfba', '#f7f9fc'], base: 'packshot-white', stage: 'beige_wall_001', bg: ['hdri', '#f2f4f7'], env: { source: 'cyclorama_hard_light', intensity: 1, backgroundBlur: 0.2 } }
+];
+export function entornoRig(id) {
+  const e = ENTORNOS.find(x => x.id === id) || ENTORNOS[0], b = SCENE_PRESETS.find(x => x.id === e.base);
+  return normalizeRig({ ...b, name: e.name, stage: e.stage, environment: { ...b.environment, background: e.bg[0], backgroundColor: e.bg[1], ...(e.env || {}) } });
+}
 
 const LEGACY_SCENE_IDS = { neutral: 'neutral-proof' }; // 旧 studio id 兼容（high-key/dark-craft id 未变）
 const DEFAULT_RIG = SCENE_PRESETS.find(x => x.id === 'neutral-proof');
@@ -226,11 +244,11 @@ export function migrateLightsV1(src) {
   };
   const hm = read('hemi', 'hemiIntensity3d');
   return normalizeLights([
-    dir('key', '主光', true, 'keyIntensity3d', 'keyColor3d', 'keyAngle', 'keyElevation3d'),
-    dir('fill', '辅光', false, 'fillIntensity3d', 'fillColor3d', 'fillAngle3d', 'fillElevation3d'),
-    dir('rim', '轮廓光', false, 'rimIntensity3d', 'rimColor3d', 'rimAngle3d', 'rimElevation3d'),
-    dir('top', '顶光', false, 'topIntensity3d', 'topColor3d'),
-    { id: 'hemi', name: '环境补光', type: 'hemi', on: hm.intensity > 0, intensity: hm.intensity, color: def('hemi').color, azimuth: 0, elevation: 90, distance: 400, shadow: false }
+    dir('key', 'Luz principal', true, 'keyIntensity3d', 'keyColor3d', 'keyAngle', 'keyElevation3d'),
+    dir('fill', 'Luz de relleno', false, 'fillIntensity3d', 'fillColor3d', 'fillAngle3d', 'fillElevation3d'),
+    dir('rim', 'Luz de contorno', false, 'rimIntensity3d', 'rimColor3d', 'rimAngle3d', 'rimElevation3d'),
+    dir('top', 'Luz cenital', false, 'topIntensity3d', 'topColor3d'),
+    { id: 'hemi', name: 'Relleno ambiental', type: 'hemi', on: hm.intensity > 0, intensity: hm.intensity, color: def('hemi').color, azimuth: 0, elevation: 90, distance: 400, shadow: false }
   ]);
 }
 
@@ -239,7 +257,7 @@ export function normalizeRig(input) {
   const src = input && typeof input === 'object' ? input : {};
   const env = src.environment || {}, sh = src.shadow || {}, tn = src.tone || {}, cam = src.camera || {};
   return {
-    id: typeof src.id === 'string' ? src.id : '', name: typeof src.name === 'string' ? src.name : '自定义场景',
+    id: typeof src.id === 'string' ? src.id : '', name: typeof src.name === 'string' ? src.name : 'Escena personalizada',
     environment: {
       source: typeof env.source === 'string' && env.source ? env.source : DEFAULT_RIG.environment.source,
       intensity: clamp(num(env.intensity, DEFAULT_RIG.environment.intensity), 0, 2),
@@ -286,7 +304,7 @@ export function storeToRig(state) {
   let lights = null;
   try { const parsed = JSON.parse(state.lightsSpec3d); if (Array.isArray(parsed)) lights = parsed; } catch (_) { lights = null; }
   return normalizeRig({
-    name: '当前场景',
+    name: 'Escena actual',
     environment: {
       source: state.environment3d, intensity: state.envIntensity3d, rotation: state.envRotation3d,
       background: state.showEnvironmentBackground ? 'hdri' : (state.backgroundMode3d === 'color' ? 'color' : 'gradient'),
@@ -306,7 +324,7 @@ export function exportSceneJson(rig) {
 export function importSceneJson(text, baseRig = null) {
   try {
     const doc = JSON.parse(text);
-    if (!doc || doc.schema !== 'box3d-scene-rig' || typeof doc.version !== 'number' || doc.version < 1 || doc.version > RIG_SCHEMA_VERSION || !doc.rig) return { ok: false, error: 'JSON schema 或版本不兼容。', rig: null };
+    if (!doc || doc.schema !== 'box3d-scene-rig' || typeof doc.version !== 'number' || doc.version < 1 || doc.version > RIG_SCHEMA_VERSION || !doc.rig) return { ok: false, error: 'Esquema o versión de JSON incompatible.', rig: null };
     let source = doc.rig;
     if (Array.isArray(doc.scope) && baseRig) {
       const base = normalizeRig(baseRig), scoped = new Set(doc.scope);
@@ -325,10 +343,10 @@ export function importSceneJson(text, baseRig = null) {
       compatibility: doc.compatibility || null,
       producer: doc.producer || '',
     }; // v1 文件经 normalizeRig 自动迁移灯具
-  } catch (_) { return { ok: false, error: 'JSON 无法解析。', rig: null }; }
+  } catch (_) { return { ok: false, error: 'No se pudo interpretar el JSON.', rig: null }; }
 }
 
 // 生成可粘贴进 rig.js SCENE_PRESETS 的 JS 字面量文本（编译期固化用）
 export function sceneCodeSnippet(rig) {
-  return '// 粘贴到 src/render3d/rig.js 的 SCENE_PRESETS 数组\n' + JSON.stringify(normalizeRig(rig), null, 2) + ',';
+  return '// Pega esto en el array SCENE_PRESETS de src/render3d/rig.js\n' + JSON.stringify(normalizeRig(rig), null, 2) + ',';
 }

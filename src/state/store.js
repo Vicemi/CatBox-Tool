@@ -1,6 +1,7 @@
 // 全局状态：单一 store（setState 式更新 + 订阅），字段与原型一致
 import { useSyncExternalStore } from 'react';
 import { MATS } from '../dieline/templates.js';
+import { defaultCustom } from '../dieline/custom.js';
 import { geomOf } from '../dieline/geom.js';
 import { heroPanelOf, placeHeroPresets } from '../dieline/hero.js';
 import { legacyAppearance, paperPreset, filmPreset } from '../render3d/presets.js';
@@ -13,6 +14,8 @@ const paper0 = paperPreset(initialPaper), film0 = filmPreset(initialFilm);
 const rig0 = scenePreset(qp.get('studio') || 'lab-default'); // 默认场景即内置 lab-default（原「候选21」红棚参数固化）；旧 id neutral/high-key/dark-craft 仍兼容
 const initial = {
   view: qp.get('view') || 'structure', tpl: qp.get('tpl') || 'rte', L: 80, W: 40, H: 120, matId: 'sbs350', bleed: 3, glue: 14,
+  custom: defaultCustom(),
+  wrap: { flap: 0, outer: 0, inner: 0, tab: 12, slot: 20, slotW: 1.2, sideTab: 0 },
   show: { bleed: true, safe: true, dims: true, labels: true },
   k: 2.2, tx: 160, ty: 200,
   fold: qp.has('fold') ? +qp.get('fold') : 24, foldFromQuery: qp.has('fold'), mat3d: qp.get('mat3d') || 'sbs', paper3d: initialPaper, film3d: initialFilm,
@@ -28,40 +31,45 @@ const initial = {
   expo3d: qp.has('expo') ? +qp.get('expo') : rig0.tone.exposure,
   editMode: false, ovr: {}, typeOvr: {}, selSeg: null,
   pdfMode: 'cmyk',
+  output: { target: 'laser', sheet: 'laser600', sheetW: 600, sheetH: 400, orient: 'auto', margin: 10, gap: 3, qty: 0, rotate: true },
   projectThumbnail: '',
   fitNonce: 0,
   embDepth: 0.3, embDir: 'up', embBoost: qp.get('embBoost') === '1',
   uiCrop: false,
+  lang: (() => { try { const v = localStorage.getItem('catbox.lang'); if (['es', 'en', 'zh'].includes(v)) return v; } catch (_) { /* sin almacenamiento */ } const n = (navigator.language || 'es').slice(0, 2); return ['en', 'zh'].includes(n) ? n : 'es'; })(),
+  xray: false,
+  entorno3d: '',     // id del entorno 3D elegido (solo para resaltar la tarjeta)
+  panelOpen3d: {},   //apertura manual por cara en 3D: {panelId: 0..100}
   sel: null, seq: 1,
   layers: [] // 默认不带预设图层，设计页从空白开始（?heroTest/?embTest/?surfaceTest 调试场景仍注入测试图层）
 };
 
 if (qp.get('heroTest') === '1') initial.layers = [
-  { id: 1, kind: 'text', x: 0, y: 0, content: '↑', font: 'Noto Sans SC', size: 13, weight: 700, color: '#d8342a', finish: 'none', visible: true, heroPreset: { cx: 0.5, cy: 0.2, size: 13, fitChars: 3 } },
+  { id: 1, kind: 'text', x: 0, y: 0, content: '↑', font: 'Noto Sans', size: 13, weight: 700, color: '#d8342a', finish: 'none', visible: true, heroPreset: { cx: 0.5, cy: 0.2, size: 13, fitChars: 3 } },
   { id: 2, kind: 'text', x: 0, y: 0, content: 'L', font: 'JetBrains Mono', size: 10, weight: 700, color: '#1c6ee0', finish: 'none', visible: true, heroPreset: { cx: 0.22, cy: 0.52, size: 10, fitChars: 3 } },
   { id: 3, kind: 'text', x: 0, y: 0, content: 'R', font: 'JetBrains Mono', size: 10, weight: 700, color: '#2e8b57', finish: 'none', visible: true, heroPreset: { cx: 0.78, cy: 0.52, size: 10, fitChars: 3 } },
   { id: 4, kind: 'text', x: 0, y: 0, content: '07', font: 'JetBrains Mono', size: 8, weight: 700, color: '#211d18', finish: 'none', visible: true, heroPreset: { cx: 0.5, cy: 0.84, size: 8, fitChars: 4 } }
 ];
 if (qp.get('embTest') === '1') {
   initial.layers = [
-    { id: 1, kind: 'shape', x: 0, y: 0, w: 1, h: 1, content: '击凸底层', finish: 'emboss', embDir: 'up', visible: true, heroPreset: { x: 0.18, y: 0.25, w: 0.52, h: 0.44 } },
-    { id: 2, kind: 'shape', x: 0, y: 0, w: 1, h: 1, content: '击凹顶层', finish: 'emboss', embDir: 'down', visible: true, heroPreset: { x: 0.46, y: 0.43, w: 0.36, h: 0.36 } }
+    { id: 1, kind: 'shape', x: 0, y: 0, w: 1, h: 1, content: 'Relieve arriba', finish: 'emboss', embDir: 'up', visible: true, heroPreset: { x: 0.18, y: 0.25, w: 0.52, h: 0.44 } },
+    { id: 2, kind: 'shape', x: 0, y: 0, w: 1, h: 1, content: 'Hundido abajo', finish: 'emboss', embDir: 'down', visible: true, heroPreset: { x: 0.46, y: 0.43, w: 0.36, h: 0.36 } }
   ];
   initial.fx = { ...initial.fx, emb: true }; initial.sel = 2; initial.seq = 3;
 }
 if (qp.get('surfaceTest') === 'uv') {
   initial.layers = [
     { id: 1, kind: 'text', x: 0, y: 0, content: 'LOCAL UV', font: 'JetBrains Mono', size: 7, weight: 700, color: '#403b36', finish: 'none', visible: true, heroPreset: { cx: 0.5, cy: 0.25, size: 7, fitChars: 10 } },
-    { id: 2, kind: 'shape', x: 0, y: 0, w: 1, h: 1, content: '普通印刷对照', color: '#8c8378', finish: 'none', visible: true, heroPreset: { x: 0.16, y: 0.43, w: 0.28, h: 0.24 } },
-    { id: 3, kind: 'shape', x: 0, y: 0, w: 1, h: 1, content: '局部UV', color: '#8c8378', finish: 'uv', visible: true, heroPreset: { x: 0.56, y: 0.43, w: 0.28, h: 0.24 } }
+    { id: 2, kind: 'shape', x: 0, y: 0, w: 1, h: 1, content: 'Impresión normal', color: '#8c8378', finish: 'none', visible: true, heroPreset: { x: 0.16, y: 0.43, w: 0.28, h: 0.24 } },
+    { id: 3, kind: 'shape', x: 0, y: 0, w: 1, h: 1, content: 'UV local', color: '#8c8378', finish: 'uv', visible: true, heroPreset: { x: 0.56, y: 0.43, w: 0.28, h: 0.24 } }
   ];
   initial.fx = { ...initial.fx, foil: false, suv: true }; initial.sel = 3; initial.seq = 4;
 }
 // ?holoTest=1：正面大半版镭射 + 局部镭射块，回归幻彩色谱用
 if (qp.get('holoTest') === '1') {
   initial.layers = [
-    { id: 1, kind: 'shape', x: 0, y: 0, w: 1, h: 1, content: '镭射整版', color: '#c8c2b8', finish: 'holo', visible: true, heroPreset: { x: 0.08, y: 0.08, w: 0.84, h: 0.6 } },
-    { id: 2, kind: 'shape', x: 0, y: 0, w: 1, h: 1, content: '镭射局部', color: '#c8c2b8', finish: 'holo', visible: true, heroPreset: { x: 0.3, y: 0.74, w: 0.4, h: 0.18 } }
+    { id: 1, kind: 'shape', x: 0, y: 0, w: 1, h: 1, content: 'Holográfico completo', color: '#c8c2b8', finish: 'holo', visible: true, heroPreset: { x: 0.08, y: 0.08, w: 0.84, h: 0.6 } },
+    { id: 2, kind: 'shape', x: 0, y: 0, w: 1, h: 1, content: 'Holográfico local', color: '#c8c2b8', finish: 'holo', visible: true, heroPreset: { x: 0.3, y: 0.74, w: 0.4, h: 0.18 } }
   ];
   initial.iridescence3d = 0.85; initial.sel = 1; initial.seq = 3;
 }
@@ -85,14 +93,17 @@ const cloneInitial = () => structuredClone(initial);
 // reset（导入工程/重置示例盒）清空历史。
 const HIST_MAX = 60, HIST_GAP = 400;
 let histPast = [], histFuture = [], histLast = 0;
-const frame = () => ({ layers: state.layers, seq: state.seq });
+// Historial: capas + estructura (caja propia, medidas, material). Todo se actualiza de forma inmutable → instantáneas sin copia.
+const HIST_KEYS = ['layers', 'seq', 'custom', 'L', 'W', 'H', 'wrap', 'matId', 'bleed', 'glue', 'tpl'];
+const frame = () => Object.fromEntries(HIST_KEYS.map(k => [k, state[k]]));
+const tracked = p => ['layers', 'custom', 'L', 'W', 'H', 'wrap', 'matId', 'bleed', 'glue', 'tpl'].some(k => Object.prototype.hasOwnProperty.call(p, k) && p[k] !== state[k]);
 
 export const store = {
   get: () => state,
   set(patch) {
     const p = typeof patch === 'function' ? patch(state) : patch;
     if (!p) return;
-    if (Object.prototype.hasOwnProperty.call(p, 'layers')) {
+    if (tracked(p)) {
       const now = Date.now();
       if (now - histLast > HIST_GAP) { histPast.push(frame()); if (histPast.length > HIST_MAX) histPast.shift(); }
       histLast = now;
@@ -106,7 +117,7 @@ export const store = {
     histFuture.push(frame());
     const f = histPast.pop();
     histLast = 0; // 撤销后的再次编辑强制新入一帧
-    state = { ...state, layers: f.layers, seq: f.seq, sel: f.layers.some(l => l.id === state.sel) ? state.sel : null };
+    state = { ...state, ...f, sel: f.layers.some(l => l.id === state.sel) ? state.sel : null, selSeg: null };
     listeners.forEach(l => l());
   },
   redo() {
@@ -114,13 +125,13 @@ export const store = {
     histPast.push(frame());
     const f = histFuture.pop();
     histLast = 0;
-    state = { ...state, layers: f.layers, seq: f.seq, sel: f.layers.some(l => l.id === state.sel) ? state.sel : null };
+    state = { ...state, ...f, sel: f.layers.some(l => l.id === state.sel) ? state.sel : null, selSeg: null };
     listeners.forEach(l => l());
   },
   histDepth: () => [histPast.length, histFuture.length],
   reset(patch = {}) {
     histPast = []; histFuture = []; histLast = 0;
-    state = { ...cloneInitial(), ...patch };
+    state = { ...cloneInitial(), lang: state.lang, ...patch }; // el idioma es preferencia del usuario, no del proyecto
     listeners.forEach(l => l());
   },
   subscribe(l) { listeners.add(l); return () => listeners.delete(l); },

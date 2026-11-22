@@ -1,12 +1,14 @@
 // Box3D 工程文件（.boxproj）：盒型/设计/正式材质/正式场景；纯本地文件导入导出，无服务端
 import { storeToRig, rigToStorePatch } from '../render3d/rig.js';
 import { normalizeMaterial, materialToStorePatch } from '../render3d/materialPresets.js';
+import { defaultCustom, normalizeCustom } from '../dieline/custom.js';
 import { asset } from '../asset.js';
+import { saveFile } from '../platform.js';
 
 export const PROJECT_SCHEMA = 'box3d-project';
 export const PROJECT_VERSION = 1;
 
-const BOX_FIELDS = ['tpl', 'L', 'W', 'H', 'matId', 'bleed', 'glue', 'ovr', 'typeOvr'];
+const BOX_FIELDS = ['tpl', 'L', 'W', 'H', 'matId', 'bleed', 'glue', 'ovr', 'typeOvr', 'custom', 'wrap'];
 const copyFields = (src, fields) => Object.fromEntries(fields.map(k => [k, structuredClone(src[k])]));
 const cleanLayer = layer => {
   const out = { ...layer };
@@ -23,7 +25,7 @@ export function makeProject(state, meta = {}) {
     version: PROJECT_VERSION,
     meta: {
       id: meta.id || newId(),
-      name: String(meta.name || '未命名包装工程').trim().slice(0, 60) || '未命名包装工程',
+      name: String(meta.name || 'Proyecto de packaging sin nombre').trim().slice(0, 60) || 'Proyecto de packaging sin nombre',
       createdAt: meta.createdAt || time,
       updatedAt: time,
       thumbnail: typeof state.projectThumbnail === 'string' && state.projectThumbnail.startsWith('data:image/')
@@ -43,7 +45,7 @@ export function makeProject(state, meta = {}) {
 
 function assertProject(doc) {
   if (!doc || doc.schema !== PROJECT_SCHEMA || doc.version !== PROJECT_VERSION || !doc.meta || !doc.box || !doc.design || !Array.isArray(doc.design.layers)) {
-    throw new Error('不是有效的 Box3D 工程文件。');
+    throw new Error('No es un archivo de proyecto Box3D válido.');
   }
   return doc;
 }
@@ -65,6 +67,8 @@ export async function projectStateOf(raw, view = 'design') {
   }));
   return {
     ...copyFields(doc.box, BOX_FIELDS),
+    custom: doc.box.custom ? normalizeCustom(doc.box.custom) : defaultCustom(),
+    wrap: doc.box.wrap ? structuredClone(doc.box.wrap) : { flap: 0, outer: 0, inner: 0, tab: 12, slot: 20, slotW: 1.2, sideTab: 0 },
     layers,
     seq: doc.design.seq,
     ...materialToStorePatch(doc.appearance && doc.appearance.material),
@@ -84,12 +88,7 @@ export async function projectStateOf(raw, view = 'design') {
 
 export function downloadProject(state, meta) {
   const project = makeProject(state, meta);
-  const a = document.createElement('a');
-  const url = URL.createObjectURL(new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' }));
-  a.href = url;
-  a.download = project.meta.name.replace(/[\\/:*?"<>|]+/g, '-') + '.boxproj';
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+  return saveFile(project.meta.name.replace(/[\\/:*?"<>|]+/g, '-') + '.boxproj', new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' }));
 }
 
 export function chooseProjectFile() {

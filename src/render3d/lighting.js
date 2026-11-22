@@ -70,7 +70,7 @@ export function setupStudio(renderer, scene, shadowSampleCount = 5) {
 
   const sampleOffsets = samplePattern(shadowSampleCount);
   const catcherGeo = new THREE.CircleGeometry(2500, 64), catcherMat = weightedShadowMaterial(0.23);
-  const catcher = new THREE.Mesh(catcherGeo, catcherMat); catcher.rotation.x = -Math.PI / 2; catcher.receiveShadow = true; group.add(catcher);
+  const catcher = new THREE.Mesh(catcherGeo, catcherMat); catcher.rotation.x = -Math.PI / 2; catcher.receiveShadow = true; catcher.renderOrder = 1; group.add(catcher);
 
   // 动态灯具表：id → { type, role:'shadow'|'plain', lights:THREE.Light[], areaLight, spec }
   const entries = new Map();
@@ -283,7 +283,7 @@ export function setupStudio(renderer, scene, shadowSampleCount = 5) {
         environmentReady = Promise.resolve(true);
       } catch (error) {
         useFallback();
-        console.warn('RoomEnvironment 加载失败，已回退程序化影棚。', error);
+        console.warn('No se pudo cargar RoomEnvironment; se usa el estudio procedural.', error);
         environmentReady = Promise.resolve(false);
       } finally {
         if (candidate) candidate.dispose();
@@ -314,7 +314,7 @@ export function setupStudio(renderer, scene, shadowSampleCount = 5) {
       } catch (error) {
         if (alive && token === generation) {
           useFallback();
-          console.warn('HDRI 加载失败，已回退程序化影棚：' + source.id, error);
+          console.warn('No se pudo cargar el HDRI; se usa el estudio procedural: ' + source.id, error);
         }
         return false;
       } finally {

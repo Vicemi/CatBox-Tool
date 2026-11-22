@@ -52,15 +52,15 @@ const fromPaperFilm = (paperId, filmId, extra) => {
 
 // 内置材质库（数值取自调研：金属 F0 sRGB、亮箔 roughness 0.1–0.15、哑箔 0.3–0.45、镭射 iridescence 0.5–1.0）
 export const MATERIAL_PRESETS = [
-  fromPaperFilm('coated-white', 'none', { id: 'bright-gold-white', name: '亮金烫白卡', foilColor3d: '#ffdb91', foilRoughness3d: 0.12 }),
-  fromPaperFilm('black-card', 'matte', { id: 'matte-gold-black', name: '哑金黑卡', foilColor3d: '#f0d092', foilRoughness3d: 0.38 }),
-  fromPaperFilm('kraft-natural', 'none', { id: 'silver-kraft', name: '烫银牛皮', silverColor3d: '#faf7f2', foilRoughness3d: 0.2 }),
-  fromPaperFilm('coated-white', 'gloss', { id: 'laser-white', name: '镭射烫白卡', foilColor3d: '#e9edf4', foilRoughness3d: 0.15, iridescence3d: 0.9, holoSpan3d: 0.75 }),
-  fromPaperFilm('coated-white', 'gloss', { id: 'laser-cyan', name: '幻彩青镭射', foilColor3d: '#e9edf4', foilRoughness3d: 0.15, iridescence3d: 0.9, holoColor3d: '#a5e3f2', holoSpan3d: 0.75 }),
-  fromPaperFilm('pearlescent-white', 'soft', { id: 'pearl-soft', name: '珠光特种' }),
-  fromPaperFilm('metal-silver-card', 'gloss', { id: 'silver-card-cool', name: '银卡冷调' }),
-  fromPaperFilm('ivory-uncoated', 'matte', { id: 'matte-ivory', name: '哑膜象牙' }),
-  fromPaperFilm('art-paper', 'gloss', { id: 'gloss-art', name: '亮膜铜版' })
+  fromPaperFilm('coated-white', 'none', { id: 'bright-gold-white', name: 'Oro brillante sobre blanco', foilColor3d: '#ffdb91', foilRoughness3d: 0.12 }),
+  fromPaperFilm('black-card', 'matte', { id: 'matte-gold-black', name: 'Oro mate sobre negro', foilColor3d: '#f0d092', foilRoughness3d: 0.38 }),
+  fromPaperFilm('kraft-natural', 'none', { id: 'silver-kraft', name: 'Plata sobre kraft', silverColor3d: '#faf7f2', foilRoughness3d: 0.2 }),
+  fromPaperFilm('coated-white', 'gloss', { id: 'laser-white', name: 'Holográfico sobre blanco', foilColor3d: '#e9edf4', foilRoughness3d: 0.15, iridescence3d: 0.9, holoSpan3d: 0.75 }),
+  fromPaperFilm('coated-white', 'gloss', { id: 'laser-cyan', name: 'Holográfico cian', foilColor3d: '#e9edf4', foilRoughness3d: 0.15, iridescence3d: 0.9, holoColor3d: '#a5e3f2', holoSpan3d: 0.75 }),
+  fromPaperFilm('pearlescent-white', 'soft', { id: 'pearl-soft', name: 'Perlado especial' }),
+  fromPaperFilm('metal-silver-card', 'gloss', { id: 'silver-card-cool', name: 'Plateado frío' }),
+  fromPaperFilm('ivory-uncoated', 'matte', { id: 'matte-ivory', name: 'Marfil mate' }),
+  fromPaperFilm('art-paper', 'gloss', { id: 'gloss-art', name: 'Estucado brillante' })
 ];
 
 export function materialPreset(id) {
@@ -81,7 +81,7 @@ export function exportMaterialJson(material) {
 export function importMaterialJson(text) {
   try {
     const doc = JSON.parse(text);
-    if (!doc || doc.schema !== 'box3d-material' || doc.version !== MATERIAL_SCHEMA_VERSION || !doc.material) return { ok: false, error: 'JSON schema 或版本不兼容。', material: null };
+    if (!doc || doc.schema !== 'box3d-material' || doc.version !== MATERIAL_SCHEMA_VERSION || !doc.material) return { ok: false, error: 'Esquema o versión de JSON incompatible.', material: null };
     return { ok: true, error: '', material: normalizeMaterial(doc.material) };
-  } catch (_) { return { ok: false, error: 'JSON 无法解析。', material: null }; }
+  } catch (_) { return { ok: false, error: 'No se pudo interpretar el JSON.', material: null }; }
 }

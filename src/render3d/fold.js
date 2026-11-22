@@ -3,23 +3,33 @@
 // buildNode 累计 rotZ（0/90/180/270），按规则自动求 flip——主体板零手工方向标定
 import * as THREE from 'three';
 import { discBbox } from '../dieline/templates.js';
+import { customPieces, wrapCustom } from '../dieline/custom.js';
 
 const deg = d => d * Math.PI / 180;
 export const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
 // 归一化：(up,vp) = f(un,vn, rotZ)
 function normUV(un, vn, rotZ) {
-  if (rotZ === 0) return [un, vn];
-  if (rotZ === 90) return [1 - vn, un];
-  if (rotZ === 180) return [1 - un, 1 - vn];
-  return [vn, 1 - un]; // 270
+  const r = ((rotZ || 0) % 360 + 360) % 360;
+  if (r === 0) return [un, vn];
+  if (r === 90) return [1 - vn, un];
+  if (r === 180) return [1 - un, 1 - vn];
+  if (r === 270) return [vn, 1 - un];
+  // Rotación libre (bisagras poligonales): gira +r alrededor del centro de la cara.
+  const a = r * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+  return [
+    0.5 + (un - 0.5) * c - (vn - 0.5) * s,
+    0.5 + (un - 0.5) * s + (vn - 0.5) * c
+  ];
 }
 // 累计 rotZ 下面板的"向外生长方向"（归一系中）：far 保持，near +180，xmin +90，xmax +270
 // 注意：pg 系 +y = 2D 系 -y（2D 顶插舌在母板上方，3D far 翼在母板 +y 侧），故 v 映射为 (1-vp)
 const OUT = { 0: '+v', 90: '-u', 180: '-v', 270: '+u' };
 function flipOf(rotZ, attach) {
   if (!attach) return '';
-  const d = OUT[rotZ];
+  const r = ((rotZ || 0) % 360 + 360) % 360;
+  const d = OUT[r];
+  if (!d) return ''; // bisagra poligonal: la UV ya viene orientada por el layout
   let f = '';
   if ((d === '+v' && attach === 'b') || (d === '-v' && attach === 't')) f += 'v';
   if ((d === '+u' && attach === 'l') || (d === '-u' && attach === 'r')) f += 'u';
@@ -113,10 +123,18 @@ export class Folder {
     if (edge === 'xmax') return { px: lx, py: ly, rz: -Math.PI / 2, len: ly };
     return { px: 0, py: 0, rz: Math.PI / 2, len: ly }; // xmin
   }
-  panelMesh(kind, len, out, rotZ, flip, uvRect) {
+  panelMesh(kind, len, out, rotZ, flip, uvRect, pts) {
     const T = this.T, t = this._t;
     let geo;
-    if (kind === 'rect') {
+    if (pts && pts.length > 2) {
+      // Silueta personalizada: misma polilínea que el troquel 2D.
+      const S = new T.Shape();
+      S.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) S.lineTo(pts[i][0], pts[i][1]);
+      S.closePath();
+      geo = new T.ExtrudeGeometry(S, { depth: t, bevelEnabled: false, curveSegments: 4 });
+      retopUV(geo, len, out, rotZ, flip, uvRect, this.sbb, this.innerUV, t);
+    } else if (kind === 'rect' || kind === 'lid') {
       // 压纹时高细分（顶面承载置换）；段数随面板尺寸
       const seg = this.hasEmb ? Math.max(40, Math.min(240, Math.round(len * 2.2))) : 1;
       const segY = this.hasEmb ? Math.max(40, Math.min(240, Math.round(out * 2.2))) : 1;
@@ -133,29 +151,47 @@ export class Folder {
   }
   buildNode(parentGroup, parentDims, spec, depth, pc, rotZ) {
     const T = this.T;
+    const flipWithPiece = (rz, attach) => {
+      const t = flipOf(rz, attach) + ((pc && pc.uvFlip) || '') + (spec.uvFlip || '');
+      return [...new Set(t.split(''))].join('');
+    };
     if (depth === 0) {
       const rz = spec.uvRot || 0;
-      const rootMesh = this.panelMesh('rect', spec.lx, spec.ly, rz, flipOf(rz, spec.attach), spec.uv);
+      const rootMesh = this.panelMesh('rect', spec.lx, spec.ly, rz, flipWithPiece(rz, spec.attach), spec.uv, spec.pts);
       rootMesh.userData.panel = { panelId: spec.panelId, role: spec.role, surface: spec.surface, up: spec.up, heroRegion: spec.heroRegion };
       parentGroup.add(rootMesh);
       for (const kid of (spec.kids || [])) this.buildNode(parentGroup, spec, kid, 1, pc, rz);
       return;
     }
-    const f = this.edgeFrame(parentDims.lx, parentDims.ly, spec.edge);
-    const rz = (rotZ + ROTADD[spec.edge]) % 360;
+    const f = spec.hinge
+      ? { px: spec.hinge.x, py: spec.hinge.y, rz: spec.hinge.rot * Math.PI / 180, len: spec.hinge.len }
+      : this.edgeFrame(parentDims.lx, parentDims.ly, spec.edge);
+    const rz = Number.isFinite(spec.rotZ) ? ((spec.rotZ % 360) + 360) % 360 : (rotZ + ROTADD[spec.edge]) % 360;
+    const len = spec.w == null ? f.len : Math.max(0.1, Math.min(f.len, spec.w));
     const g = new T.Group(); g.position.set(f.px, f.py, 0); g.rotation.z = f.rz;
-    const fg = new T.Group(); g.add(fg);
+    const fg = new T.Group();
+    // Caras más estrechas que su borde: centradas o alineadas al inicio/fin del borde.
+    let edgeOff = (f.len - len) / 2;
+    if (Number.isFinite(spec.edgeOffset)) {
+      edgeOff = (spec.edge === 'near' || spec.edge === 'xmax') ? f.len - spec.edgeOffset - len : spec.edgeOffset;
+    } else if (spec.align === 'start' || spec.align === 'end') {
+      const raw = spec.align === 'start' ? 0 : f.len - len;
+      edgeOff = (spec.edge === 'near' || spec.edge === 'xmax') ? f.len - raw - len : raw;
+    }
+    fg.position.x = edgeOff;
+    g.add(fg);
     this._shapeN = spec.n || null;
-    const mesh = this.panelMesh(spec.shape || 'rect', f.len, spec.out, rz, flipOf(rz, spec.attach), spec.uv);
+    const mesh = this.panelMesh(spec.shape || 'rect', len, spec.out, rz, flipWithPiece(rz, spec.attach), spec.uv, spec.pts);
     mesh.userData.panel = { panelId: spec.panelId, role: spec.role, surface: spec.surface, up: spec.up, heroRegion: spec.heroRegion };
     this._shapeN = null;
     // 纸层堆叠：副翼类面板沿法向内缩，消除合盖后的共面 z-fighting
     const zoff = { glue: -1.05, dust: -0.62, ear: -0.62, tuck: -0.55 }[spec.shape] || 0;
     if (zoff) mesh.position.z = zoff * this._t;
+    if (spec.zOff) mesh.position.z += spec.zOff;
     fg.add(mesh);
     parentGroup.add(g);
-    this.nodes.push({ fg, depth, angle: deg(spec.angle == null ? 90 : spec.angle), sign: pc.sign });
-    const dims = { lx: f.len, ly: spec.out };
+    this.nodes.push({ fg, depth, panelId: spec.panelId, angle: deg(spec.angle == null ? 90 : spec.angle), sign: spec.sign == null ? pc.sign : spec.sign });
+    const dims = { lx: len, ly: spec.out };
     for (const kid of (spec.kids || [])) this.buildNode(fg, dims, kid, depth + 1, pc, rz);
   }
 
@@ -170,7 +206,8 @@ export class Folder {
       pg.position.set(0, 0.5, 0);
       pc.pg = pg;
       const pv = new T.Group();
-      pv.position.set(pc.off[0], 0, pc.off[1]);
+      pv.position.set(pc.off[0] + (pc.xOff || 0), pc.yOff || 0, pc.off[1] + (pc.zOff || 0));
+      pv.rotation.y = pc.rotY || 0;
       pv.add(pg); pc.pivot = pv;
       this.buildNode(pg, null, pc.tree, 0, pc, 0);
       root.add(pv);
@@ -193,7 +230,9 @@ export class Folder {
     const D = this.maxDepth || 1;
     for (const n of this.nodes) {
       const kd = clamp(kF * D - (D - n.depth), 0, 1);
-      const e = kd * kd * (3 - 2 * kd);
+      // Apertura manual por cara (0 = según el plegado global, 100 = totalmente abierta/plana)
+      const open = clamp(((this.panelOpen || {})[n.panelId] || 0) / 100, 0, 1);
+      const e = kd * kd * (3 - 2 * kd) * (1 - open);
       n.fg.rotation.x = n.sign * e * n.angle;
     }
     for (const pc of (pieces || [])) {
@@ -204,8 +243,19 @@ export class Folder {
       // 等效印刷面朝下折起（real 折叠物理：对侧墙板朝向相反），不做 y 轴翻件（会把墙板文字转反）
       pc.pg.rotation.x = -Math.PI / 2 + (pc.flip ? Math.PI * kFlip : 0);
       const pv = pc.pivot; if (!pv) continue;
-      // 翻件绕 x 轴后世界 z 足迹平移 ly，补回原位
-      pv.position.set(pc.off[0], 0, pc.off[1] - (pc.flip ? pc.tree.ly * kFlip : 0)); pv.rotation.set(0, 0, 0);
+      // 翻件绕 x 轴后世界 z 足迹平移 ly，补回原位；xOff/yOff/zOff 用于多件套合
+      pv.position.set(
+        pc.off[0] + (pc.xOff || 0),
+        pc.yOff || 0,
+        pc.off[1] + (pc.zOff || 0) - (pc.flip ? pc.tree.ly * kFlip : 0)
+      );
+      pv.rotation.set(0, pc.rotY || 0, 0);
+      if (pc.place) {
+        const kP = ss(clamp((k - 0.78) / 0.22, 0, 1));
+        if (Number.isFinite(pc.place.x)) pv.position.x += (pc.place.x - pv.position.x) * kP;
+        if (Number.isFinite(pc.place.y)) pv.position.y += (pc.place.y - pv.position.y) * kP;
+        if (Number.isFinite(pc.place.z)) pv.position.z += (pc.place.z - pv.position.z) * kP;
+      }
       if (pc.stand) {
         const kS2 = ss(clamp((k - 0.85) / 0.15, 0, 1));
         pv.rotation.x = Math.PI / 2 * kS2;
@@ -235,7 +285,12 @@ export class Folder {
 }
 
 // —— 盒型折叠树（与 2D gen* 共用尺寸公式；uv = 2D 刀版坐标矩形，attach = 2D 中挂于母板哪侧） ——
-export function makePieces(tpl, L, W, H, t, glue) {
+export function makePieces(tpl, L, W, H, t, glue, custom, wrap) {
+  if (tpl === 'custom') return customPieces({ custom, L, W, H, tpl });
+  if (tpl === 'wrap') {
+    const st = { tpl, L, W, H, custom, wrap };
+    return customPieces({ ...st, custom: wrapCustom(st) });
+  }
   const dh = Math.min(W * 0.75, 32), tk = Math.min(16, W * 0.55);
   if (tpl === 'rte' || tpl === 'ste') {
     const bh = H + t, lidH = W + t;
@@ -329,8 +384,8 @@ export function makePieces(tpl, L, W, H, t, glue) {
     ];
   }
   // 卷筒盒（圆柱 24 棱 / 六边形 6 棱）：p0 根段 → xmax 出 p1 → far 逐段卷合；正 N 边形顶/底盖
-  if (tpl === 'cyl' || tpl === 'hex') {
-    const N = tpl === 'cyl' ? 24 : 6;
+  if (tpl === 'cyl' || tpl === 'hex' || tpl === 'tri') {
+    const N = tpl === 'cyl' ? 24 : tpl === 'hex' ? 6 : 3;
     const wSeg = tpl === 'cyl' ? Math.PI * L / 24 : W;
     const bh = H + t;
     const { a, Rp, h } = discBbox(N, wSeg);
@@ -343,9 +398,9 @@ export function makePieces(tpl, L, W, H, t, glue) {
       { edge: 'far', out: h, shape: 'disc', n: N, uv: [wSeg / 2 - Rp, -(a + Rp), 2 * Rp, a + Rp], attach: 't' },
       { edge: 'near', out: h, shape: 'disc', n: N, uv: [wSeg / 2 - Rp, bh, 2 * Rp, a + Rp], attach: 'b' }
     ].filter(Boolean);
-    return [{ tree: { lx: wSeg, ly: bh, uv: [0, 0, wSeg, bh], panelId: 'tube-body', role: 'hero', surface: 'outside', up: 'top', heroRegion: N === 24 ? [9 / 24, 0, 6 / 24, 1] : [3 / 6, 0, 1 / 6, 1], kids }, sign: -1, lift: Rp, off: [0, 0], stand: true }];
+    return [{ tree: { lx: wSeg, ly: bh, uv: [0, 0, wSeg, bh], panelId: 'tube-body', role: 'hero', surface: 'outside', up: 'top', heroRegion: N === 24 ? [9 / 24, 0, 6 / 24, 1] : N === 6 ? [3 / 6, 0, 1 / 6, 1] : [1 / 3, 0, 1 / 3, 1], kids }, sign: -1, lift: Rp, off: [0, 0], stand: true }];
   }
-  if (tpl !== 'drawer') throw new Error(`未知盒型：${tpl}；请先补齐结构与 3D 同步契约`);
+  if (tpl !== 'drawer') throw new Error(`Tipo de caja desconocido: ${tpl}. Falta el contrato de plegado 2D/3D.`);
   // drawer：内盒托盘 + 套筒（root uvRot=90：3D lx 沿 2D band 纵向）
   const D2 = L + 2 * H + 45;
   const oxS = 2 * H + L + 28;

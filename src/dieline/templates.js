@@ -2,24 +2,31 @@
 // 纯函数风格：f(params, board) → 线段/填充/标注集合，几何一律以 mm 为基本单位
 
 export const MATS = [
-  { id: 'art200', name: '薄铜版纸 200g', t: 0.22, bleed: 3, note: '轻薄彩盒/裱纸' },
-  { id: 'sbs350', name: '白卡 350g', t: 0.45, bleed: 3, note: '折叠纸盒' },
-  { id: 'sbs400', name: '白卡 400g', t: 0.5, bleed: 3, note: '折叠纸盒' },
-  { id: 'art300', name: '铜版纸 300g', t: 0.35, bleed: 3, note: '裱糊/卡盒' },
-  { id: 'kraft350', name: '牛皮纸 350g', t: 0.42, bleed: 3, note: '素面环保' },
-  { id: 'fluteF', name: 'F 楞微瓦', t: 0.8, bleed: 5, note: '精品瓦楞' },
-  { id: 'fluteE', name: 'E 楞瓦楞', t: 1.5, bleed: 5, note: '飞机盒常用' },
-  { id: 'fluteB', name: 'B 楞瓦楞', t: 3.0, bleed: 5, note: '电商外箱' }
+  { id: 'art200', name: 'Estucado fino 200 g', t: 0.22, bleed: 3, note: 'Caja ligera / forrado' },
+  { id: 'sbs350', name: 'Cartulina blanca 350 g', t: 0.45, bleed: 3, note: 'Caja plegable' },
+  { id: 'sbs400', name: 'Cartulina blanca 400 g', t: 0.5, bleed: 3, note: 'Caja plegable' },
+  { id: 'art300', name: 'Estucado 300 g', t: 0.35, bleed: 3, note: 'Forrado / caja rígida' },
+  { id: 'kraft350', name: 'Kraft 350 g', t: 0.42, bleed: 3, note: 'Ecológico sin estucar' },
+  { id: 'fluteF', name: 'Microcanal F', t: 0.8, bleed: 5, note: 'Corrugado fino' },
+  { id: 'fluteE', name: 'Corrugado E', t: 1.5, bleed: 5, note: 'Caja de envío' },
+  { id: 'fluteB', name: 'Corrugado B', t: 3.0, bleed: 5, note: 'Caja exterior' },
+  { id: 'card15', name: 'Cartón gris 1,5 mm', t: 1.5, bleed: 0, note: 'Corte láser / rígido' },
+  { id: 'mdf3', name: 'MDF 3 mm', t: 3, bleed: 0, note: 'Corte láser' },
+  { id: 'mdf5', name: 'MDF 5 mm', t: 5, bleed: 0, note: 'Corte láser' },
+  { id: 'acrylic3', name: 'Acrílico 3 mm', t: 3, bleed: 0, note: 'Corte láser' }
 ];
 
 export const TPLS = [
-  { id: 'rte', code: 'RTE', name: '反插盒', sub: '折叠纸盒' },
-  { id: 'ste', code: 'STE', name: '直插盒', sub: '折叠纸盒' },
-  { id: 'mailer', code: 'MLR', name: '飞机盒', sub: '瓦楞 · 免胶' },
-  { id: 'lidbase', code: 'TDG', name: '天地盖', sub: '两片式' },
-  { id: 'drawer', code: 'DRW', name: '抽屉盒', sub: '内盒 + 套筒' },
-  { id: 'cyl', code: 'CYL', name: '圆柱盒', sub: '卷筒 · 24 棱' },
-  { id: 'hex', code: 'HEX', name: '六边形盒', sub: '六棱筒' }
+  { id: 'rte', code: 'RTE', name: 'Solapa inversa', sub: 'Caja plegable' },
+  { id: 'ste', code: 'STE', name: 'Solapa recta', sub: 'Caja plegable' },
+  { id: 'mailer', code: 'MLR', name: 'Caja de envío', sub: 'Corrugado · sin cola' },
+  { id: 'lidbase', code: 'TDG', name: 'Caja y tapa', sub: 'Dos piezas' },
+  { id: 'drawer', code: 'DRW', name: 'Caja cajón', sub: 'Interior + funda' },
+  { id: 'cyl', code: 'CYL', name: 'Caja cilíndrica', sub: 'Tubo · 24 caras' },
+  { id: 'hex', code: 'HEX', name: 'Caja hexagonal', sub: 'Tubo hexagonal' },
+  { id: 'tri', code: 'TRI', name: 'Caja triangular', sub: 'Tubo triangular' },
+  { id: 'wrap', code: 'WRP', name: 'Envolvente', sub: 'Alas + solapas con pestañas' },
+  { id: 'custom', code: 'DIY', name: 'Mi caja', sub: 'Diseño propio' }
 ];
 
 // 正 N 边形盖的几何参数：apothem / 外接圆半径 / 盖高
@@ -36,15 +43,15 @@ export function genTube(c, s, t, N, wSeg) {
   const heroSpan = N === 24 ? 6 : 1, heroIndex = N === 24 ? Math.floor((N - heroSpan) / 2) : Math.floor(N / 2), body = c.rect(0, 0, bodyW, bh);
   c.fill(body);
   if (N === 24) c.region(body, { panelId: 'tube-body', role: 'hero', surface: 'outside', up: 'top', heroRegion: [heroIndex / N, 0, heroSpan / N, 1], heroBox: [heroIndex * wSeg, 0, (heroIndex + heroSpan) * wSeg, bh] });
-  else for (let i = 0; i < N; i++) c.region(c.rect(i * wSeg, 0, wSeg, bh), { panelId: i === heroIndex ? 'tube-body' : `tube-face-${i}`, role: i === heroIndex ? 'hero' : 'design', surface: 'outside', up: 'top', ...(i === heroIndex ? { heroRegion: [heroIndex / N, 0, 1 / N, 1], heroBox: [heroIndex * wSeg, 0, (heroIndex + 1) * wSeg, bh] } : {}) });
-  c.label(bodyW / 2, bh / 2, '筒身'); c.safeR(0, 0, bodyW, bh);
+  else for (let i = 0; i < N; i++) c.region(c.rect(i * wSeg, 0, wSeg, bh), { panelId: i === heroIndex ? 'tube-body' : `tube-face-${i}`, role: i === heroIndex ? 'hero' : 'design', surface: 'outside', up: 'top', ...(i === heroIndex ? { heroRegion: [heroIndex / N, 0, heroSpan / N, 1], heroBox: [heroIndex * wSeg, 0, (heroIndex + heroSpan) * wSeg, bh] } : {}) });
+  c.label(bodyW / 2, bh / 2, 'Cuerpo'); c.safeR(0, 0, bodyW, bh);
   const gp = [[0, 0], [-g, 4], [-g, bh - 4], [0, bh]];
-  c.fill(gp); c.cut(gp); c.label(-g / 2, bh / 2, '糊口', 2.8);
+  c.fill(gp); c.cut(gp); c.label(-g / 2, bh / 2, 'Pestaña', 2.8);
   c.crease([[0, 0], [0, bh]]);
   for (let k = 1; k < N; k++) c.crease([[k * wSeg, 0], [k * wSeg, bh]]);
   c.cut([[bodyW, 0], [bodyW, bh]]);
-  // 顶/底盖：附著边为压痕，凸弧为切线
-  for (const d of [{ y0: 0, sgn: -1, nm: '顶盖' }, { y0: bh, sgn: 1, nm: '底盖' }]) {
+  // Tapas superior/inferior: borde de unión = pliegue, arco exterior = corte
+  for (const d of [{ y0: 0, sgn: -1, nm: 'Tapa superior' }, { y0: bh, sgn: 1, nm: 'Tapa inferior' }]) {
     const cx = wSeg / 2, cy = d.y0 + d.sgn * a, e = 2 * Math.PI / N, base = Math.atan2(-d.sgn * a, -wSeg / 2);
     const pts = [];
     for (let k = 0; k < N; k++) pts.push([cx + Rp * Math.cos(base + k * e), cy + Rp * Math.sin(base + k * e)]);
@@ -56,7 +63,7 @@ export function genTube(c, s, t, N, wSeg) {
   }
   c.dimH(-g, bodyW, bh + h + 9, '' + c.fmt(bodyW + g));
   c.dimV(0, bh, bodyW + 8, '' + c.fmt(bh));
-  c.dimH(0, wSeg, -(h + 8), '' + c.fmt(wSeg) + ' /段');
+  c.dimH(0, wSeg, -(h + 8), '' + c.fmt(wSeg) + ' / tramo');
 }
 
 // 直插/反插盒：横向四板 + 糊口 + 两端插舌/防尘翼
@@ -64,10 +71,10 @@ export function genTuck(c, s, t, reverse) {
   const L = s.L, W = s.W, H = s.H, glue = s.glue, bh = H + t;
   const cols = [W + t, L + t, W + t, L + 2 * t];
   const xs = [0]; cols.forEach(w => xs.push(xs[xs.length - 1] + w));
-  const names = ['侧面', '正面', '侧面', '背面'], panelIds = ['side-left', 'front', 'side-right', 'back'];
+  const names = ['Lateral', 'Frente', 'Lateral', 'Dorso'], panelIds = ['side-left', 'front', 'side-right', 'back'];
   for (let i = 0; i < 4; i++) { const pts = c.rect(xs[i], 0, cols[i], bh); c.fill(pts); c.region(pts, { panelId: panelIds[i], role: i === 1 ? 'hero' : 'design', surface: 'outside', up: 'top' }); c.label(xs[i] + cols[i] / 2, bh / 2, names[i]); c.safeR(xs[i], 0, cols[i], bh); }
   const gp = [[0, 0], [-glue, 5], [-glue, bh - 5], [0, bh]];
-  c.fill(gp); c.cut(gp); c.label(-glue / 2, bh / 2, '糊口', 2.8);
+  c.fill(gp); c.cut(gp); c.label(-glue / 2, bh / 2, 'Pestaña', 2.8);
   c.crease([[0, 0], [0, bh]]);
   for (let i = 1; i < 4; i++) c.crease([[xs[i], 0], [xs[i], bh]]);
   c.cut([[xs[4], 0], [xs[4], bh]]);
@@ -113,7 +120,7 @@ export function genMailer(c, s, t) {
   const L = s.L, W = s.W, H = s.H, Lc = L + 2 * t;
   const tk = Math.min(H * 0.7, 28), Wl = W + 3 * t, Hb = H + t, Wb = W + t, Hf = H, Sw = H + t;
   const y1 = Wl, y2 = y1 + Hb, y3 = y2 + Wb, y4 = y3 + Hf;
-  const rows = [[0, y1, '盖（外面）', 'mailer-lid'], [y1, y2, '背面', 'mailer-back'], [y2, y3, '底面', 'mailer-bottom'], [y3, y4, '正面', 'mailer-front']];
+  const rows = [[0, y1, 'Tapa (exterior)', 'mailer-lid'], [y1, y2, 'Dorso', 'mailer-back'], [y2, y3, 'Fondo', 'mailer-bottom'], [y3, y4, 'Frente', 'mailer-front']];
   for (let i = 0; i < rows.length; i++) { const rr = rows[i], pts = c.rect(0, rr[0], Lc, rr[1] - rr[0]); c.fill(pts); c.region(pts, { panelId: rr[3], role: i === 0 ? 'hero' : 'design', surface: 'outside', up: 'top' }); c.label(Lc / 2, (rr[0] + rr[1]) / 2, rr[2]); c.safeR(0, rr[0], Lc, rr[1] - rr[0]); }
   const rt = 5;
   const tp = [[4, 0], [4, -tk + rt]].concat(c.q([4, -tk + rt], [4, -tk], [4 + rt, -tk], 'tr').slice(1)).concat([[Lc - 4 - rt, -tk]]).concat(c.q([Lc - 4 - rt, -tk], [Lc - 4, -tk], [Lc - 4, -tk + rt], 'tr').slice(1)).concat([[Lc - 4, 0]]);
@@ -127,7 +134,7 @@ export function genMailer(c, s, t) {
   c.cut(dl); c.fill(dl); c.crease([[0, 2], [0, y1 - 2]]); c.cut([[0, 0], [0, 2]]); c.cut([[0, y1 - 2], [0, y1]]);
   c.cut(mir(dl)); c.fill(mir(dl)); c.crease([[Lc, 2], [Lc, y1 - 2]]); c.cut([[Lc, 0], [Lc, 2]]); c.cut([[Lc, y1 - 2], [Lc, y1]]);
   const wallL = c.rect(-Sw, y2, Sw, Wb);
-  c.fill(wallL); c.region(wallL, { panelId: 'mailer-wall-left', surface: 'outside', up: 'top' }); c.label(-Sw / 2, y2 + Wb / 2, '侧墙', 3.2);
+  c.fill(wallL); c.region(wallL, { panelId: 'mailer-wall-left', surface: 'outside', up: 'top' }); c.label(-Sw / 2, y2 + Wb / 2, 'Pared lateral', 3.2);
   c.crease([[0, y2], [0, y3]]);
   c.cut([[-Sw, y2], [0, y2]]); c.cut([[-Sw, y2], [-Sw, y3]]);
   c.cut([[-Sw, y3], [-Sw + 1, y3]]); c.cut([[-1, y3], [0, y3]]); c.crease([[-Sw + 1, y3], [-1, y3]]);
@@ -135,7 +142,7 @@ export function genMailer(c, s, t) {
   const ear = [[-Sw + 1, y3], [-Sw + 1, y3 + eh - re]].concat(c.q([-Sw + 1, y3 + eh - re], [-Sw + 1, y3 + eh], [-Sw + 1 + re, y3 + eh], 'tr').slice(1)).concat([[-4, y3 + eh]]).concat(c.q([-4, y3 + eh], [-1, y3 + eh], [-1, y3 + eh - 3], 'tr').slice(1)).concat([[-1, y3]]);
   c.cut(ear); c.fill(ear);
   const wallR = c.rect(Lc, y2, Sw, Wb);
-  c.fill(wallR); c.region(wallR, { panelId: 'mailer-wall-right', surface: 'outside', up: 'top' }); c.label(Lc + Sw / 2, y2 + Wb / 2, '侧墙', 3.2);
+  c.fill(wallR); c.region(wallR, { panelId: 'mailer-wall-right', surface: 'outside', up: 'top' }); c.label(Lc + Sw / 2, y2 + Wb / 2, 'Pared lateral', 3.2);
   c.crease([[Lc, y2], [Lc, y3]]);
   c.cut([[Lc, y2], [Lc + Sw, y2]]); c.cut([[Lc + Sw, y2], [Lc + Sw, y3]]);
   c.cut([[Lc + Sw - 1, y3], [Lc + Sw, y3]]); c.cut([[Lc, y3], [Lc + 1, y3]]); c.crease([[Lc + 1, y3], [Lc + Sw - 1, y3]]);
@@ -150,7 +157,7 @@ export function genTray(c, Lt, Wt, hh, ox, nm, panelConfig = {}) {
   const cx1 = ox + hh, cx2 = ox + hh + Lt, cy1 = hh, cy2 = hh + Wt;
   const TW = 2 * hh + Lt, TH = 2 * hh + Wt;
   const prefix = panelConfig.prefix || 'tray', center = c.rect(cx1, cy1, Lt, Wt);
-  c.fill(center); c.region(center, { panelId: panelConfig.centerId || `${prefix}-bottom`, surface: 'outside', up: 'top', ...(panelConfig.centerMeta || {}) }); c.label(cx1 + Lt / 2, cy1 + Wt / 2, '底面'); c.safeR(cx1, cy1, Lt, Wt);
+  c.fill(center); c.region(center, { panelId: panelConfig.centerId || `${prefix}-bottom`, surface: 'outside', up: 'top', ...(panelConfig.centerMeta || {}) }); c.label(cx1 + Lt / 2, cy1 + Wt / 2, 'Fondo'); c.safeR(cx1, cy1, Lt, Wt);
   const back = c.rect(cx1, 0, Lt, hh), front = c.rect(cx1, cy2, Lt, hh), left = c.rect(ox, cy1, hh, Wt), right = c.rect(cx2, cy1, hh, Wt);
   c.fill(back); c.region(back, { panelId: `${prefix}-back`, surface: 'outside', up: 'top' });
   c.fill(front); c.region(front, { panelId: `${prefix}-front`, surface: 'outside', up: 'top' });
@@ -184,9 +191,9 @@ export function genSleeve(c, s, t, ox) {
   const L = s.L, W = s.W, H = s.H, g = 12, band = L + 2;
   const cols = [H + 2 * t, W + 3 * t, H + 3 * t, W + 4 * t];
   const xs = [ox]; cols.forEach(w => xs.push(xs[xs.length - 1] + w));
-  const names = ['侧面', '顶面', '侧面', '底面'], panelIds = ['sleeve-side-left', 'sleeve-top', 'sleeve-side-right', 'sleeve-bottom'];
+  const names = ['Lateral', 'Superior', 'Lateral', 'Inferior'], panelIds = ['sleeve-side-left', 'sleeve-top', 'sleeve-side-right', 'sleeve-bottom'];
   for (let i = 0; i < 4; i++) { const pts = c.rect(xs[i], 0, cols[i], band); c.fill(pts); c.region(pts, { panelId: panelIds[i], role: i === 1 ? 'hero' : 'design', surface: 'outside', up: 'left' }); c.label(xs[i] + cols[i] / 2, band / 2, names[i], 3.6); c.safeR(xs[i], 0, cols[i], band); }
-  c.label(ox + (xs[4] - ox) / 2, -8, '套筒（外套）', 4.5);
+  c.label(ox + (xs[4] - ox) / 2, -8, 'Funda exterior', 4.5);
   const gp = [[ox, 0], [ox - g, 4], [ox - g, band - 4], [ox, band]];
   c.fill(gp); c.cut(gp); c.crease([[ox, 0], [ox, band]]);
   for (let i = 1; i < 4; i++) c.crease([[xs[i], 0], [xs[i], band]]);

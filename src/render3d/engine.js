@@ -7,6 +7,7 @@ import { bakeAtlas, paintFilmChannels, paintFoilRoughness } from './bake.js';
 import { makeAtlasTextures, disposeTextures, applyFaceMaterial, applyCoreMaterial } from './materials.js';
 import { setupStudio } from './lighting.js';
 import { makeStageGround } from './stage.js';
+import { t } from '../i18n/index.js';
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const STUDIO_CONTROL_KEYS = ['environmentIntensity', 'environmentRotation', 'backgroundShown', 'backgroundMode', 'backgroundColor', 'backgroundBlur', 'domeSpec', 'shadowSoftness', 'shadowOpacity'];
@@ -23,7 +24,7 @@ export class BoxEngine {
     this.faceMat = new THREE.MeshPhysicalMaterial({ color: 0xf4f1e8, roughness: 0.5 });
     this.coreMat = new THREE.MeshStandardMaterial({ color: 0xd8cdb2, roughness: 0.92 });
     this.init().catch(e => {
-      if (this.el) this.el.innerHTML = '<div style="padding:20px;color:#a33;font:12px sans-serif">3D 初始化失败: ' + e.message + '</div>';
+      if (this.el) this.el.innerHTML = '<div style="padding:20px;color:#a33;font:12px sans-serif">Error al iniciar 3D: ' + e.message + '</div>';
       console.error(e);
     });
   }
@@ -34,13 +35,14 @@ export class BoxEngine {
     this.props = { ...props };
     if (!this.ready) return;
     const p = this.props;
-    if (prev.l !== p.l || prev.w !== p.w || prev.h !== p.h || prev.t !== p.t || prev.tpl !== p.tpl || prev.glue !== p.glue || prev.sbbKey !== p.sbbKey) {
+    if (prev.l !== p.l || prev.w !== p.w || prev.h !== p.h || prev.t !== p.t || prev.tpl !== p.tpl || prev.glue !== p.glue || prev.sbbKey !== p.sbbKey || prev.custom !== p.custom || prev.wrap !== p.wrap) {
       clearTimeout(this._bt);
       this._bt = setTimeout(() => { if (this._disposed) return; this.build(); this.rebake(); this.applyFold(); this.frame(); }, 150);
     } else if (prev.bakeKey !== p.bakeKey) {
       clearTimeout(this._at);
       this._at = setTimeout(() => { if (this._disposed) return; this.rebake(); }, 150);
     }
+    if (prev.panelOpen !== p.panelOpen) this.applyFold();
     if (prev.fold !== p.fold) {
       this.applyFold();
       clearTimeout(this._ft);
@@ -52,18 +54,23 @@ export class BoxEngine {
     if (prev.film !== p.film || FILM_CONTROL_KEYS.some(k => prev[k] !== p[k])) this.updateFilm();
     if (prev.foilRoughness !== p.foilRoughness) this.updateFoilRoughness();
     if (prev.check !== p.check || prev.embOn !== p.embOn || prev.embBoost !== p.embBoost || prev.embDepth !== p.embDepth || prev.film !== p.film || MATERIAL_CONTROL_KEYS.some(k => prev[k] !== p[k])) this.applyFlags();
+    if (prev.xray !== p.xray) this.applyXray();
     if (prev.environment !== p.environment && this.studio) this.studio.setEnvironment(p.environment);
     if (prev.lightsSpec !== p.lightsSpec && this.studio) { this.studio.setLights(p.lightsSpec); this.studio.updateHelpers(); }
     if (prev.lightEdit !== p.lightEdit && this.studio) this.studio.setHelpersVisible(p.lightEdit === '1');
     if (prev.selLight !== p.selLight && this.studio) this.studio.setHelperSelected(p.selLight || null);
     if (STUDIO_CONTROL_KEYS.some(k => prev[k] !== p[k])) this.applyStudioControls();
     if (prev.stage !== p.stage) this.setStage(p.stage);
+    else if (prev.backgroundColor !== p.backgroundColor && this.stageGround && this.stageGround.userData.setColor) this.stageGround.userData.setColor(p.backgroundColor);
     if (prev.spin !== p.spin) this.syncTurnReset();
     if (prev.exposure !== p.exposure && this.renderer) this.renderer.toneMappingExposure = this.num('exposure', 1.05);
     if (prev.toneMapping !== p.toneMapping && this.renderer) this.applyToneMapping();
     if (prev.cameraType !== p.cameraType && this.camera) this.switchCamera(cameraTypeOf(p.cameraType));
     if (prev.fov !== p.fov && this.camera && this.camera.isPerspectiveCamera) {
-      this.camera.fov = clamp(this.num('fov', 35), 16, 46);
+      // Dolly con la focal: el sujeto mantiene su tamaño y cambia la perspectiva
+      const nf = clamp(this.num('fov', 35), 16, 46), k = Math.tan(this.camera.fov * Math.PI / 360) / Math.tan(nf * Math.PI / 360), tg = this.controls.target;
+      if (isFinite(k) && prev.fov !== undefined) this.camera.position.sub(tg).multiplyScalar(k).add(tg);
+      this.camera.fov = nf;
       this.camera.updateProjectionMatrix();
     }
   }
@@ -91,33 +98,50 @@ export class BoxEngine {
     this.controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
     this.controls.addEventListener('start', () => { this._pauseSpin = Date.now() + 4000; this._fitGoal = null; }); // 用户接管即中断自动适配过渡
     r.domElement.addEventListener('dblclick', () => this.frame());
+    // Selección de cara en el visor 3D (clic sin arrastre)
+    this._pickDown = e => { this._pickX = e.clientX; this._pickY = e.clientY; };
+    this._pickClick = e => {
+      if (!this.props.onPanelSelect || !this.boxRoot || !this.camera) return;
+      if (this._pickX != null && Math.hypot(e.clientX - this._pickX, e.clientY - this._pickY) > 5) return;
+      const T = this.T, rect = r.domElement.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) return;
+      const ndc = new T.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+      const rc = new T.Raycaster();
+      rc.setFromCamera(ndc, this.camera);
+      const hits = rc.intersectObjects(this.boxRoot.children, true);
+      const hit = hits.find(h => h.object && h.object.isMesh && h.object.userData && h.object.userData.panel && h.object.userData.panel.panelId);
+      if (hit) this.props.onPanelSelect(hit.object.userData.panel.panelId);
+    };
+    r.domElement.addEventListener('pointerdown', this._pickDown);
+    r.domElement.addEventListener('click', this._pickClick);
+
     // 视角按钮
     const tb = document.createElement('div');
     tb.style.cssText = 'position:absolute;bottom:10px;right:10px;display:flex;gap:4px;z-index:2';
     const mkBtn = (label, fn) => {
       const b = document.createElement('button'); b.textContent = label;
-      b.style.cssText = 'background:rgba(250,247,240,.92);border:1px solid #ded5c4;border-radius:5px;font:12px "Noto Sans SC",sans-serif;color:#5c554a;padding:4px 9px;cursor:pointer;white-space:nowrap';
+      b.style.cssText = 'background:rgba(250,247,240,.92);border:1px solid #ded5c4;border-radius:5px;font:12px "Noto Sans",sans-serif;color:#5c554a;padding:4px 9px;cursor:pointer;white-space:nowrap';
       b.onmouseenter = () => b.style.background = '#f0e8d8';
       b.onmouseleave = () => b.style.background = 'rgba(250,247,240,.92)';
       b.onclick = fn; tb.appendChild(b);
     };
-    mkBtn('正视', () => this.setView('front')); mkBtn('侧视', () => this.setView('side'));
-    mkBtn('顶视', () => this.setView('top')); mkBtn('等轴', () => this.setView('iso'));
-    mkBtn('适配', () => this.frame());
+    mkBtn(t('Frontal'), () => this.setView('front')); mkBtn(t('Lateral'), () => this.setView('side'));
+    mkBtn(t('Superior'), () => this.setView('top')); mkBtn(t('Iso'), () => this.setView('iso'));
+    mkBtn(t('Ajustar'), () => this.frame());
     this.el.appendChild(tb);
     // C4D 式拖拽模式：旋转 / 平移 / 移动盒子 / 转盒
     const mb = document.createElement('div');
     mb.style.cssText = 'position:absolute;top:10px;left:10px;display:flex;align-items:center;z-index:2;border:1px solid #ded5c4;border-radius:6px;overflow:hidden;background:rgba(250,247,240,.92)';
     this._modeBtns = {};
-    [['rotate', '○ 旋转'], ['pan', '✚ 平移'], ['move', '▣ 移动盒子'], ['turn', '⟳ 转盒']].forEach(pair => {
+    [['rotate', '○ ' + t('Girar')], ['pan', '✚ ' + t('Vista')], ['move', '▣ ' + t('Caja')], ['turn', '⟳ ' + t('Girar caja')]].forEach(pair => {
       const b = document.createElement('button'); b.textContent = pair[1];
-      b.style.cssText = 'border:none;font:12px "Noto Sans SC",sans-serif;padding:5px 11px;cursor:pointer;white-space:nowrap;background:transparent;color:#5c554a';
+      b.style.cssText = 'border:none;font:12px "Noto Sans",sans-serif;padding:5px 11px;cursor:pointer;white-space:nowrap;background:transparent;color:#5c554a';
       b.onclick = () => this.setMode(pair[0]);
       this._modeBtns[pair[0]] = b; mb.appendChild(b);
     });
     // 回正：转盒后一键归零 boxRoot 旋转；自动旋转（spin）时 rotation.y 被持续驱动，回正无意义故禁用
-    const rb = document.createElement('button'); rb.textContent = '回正'; rb.title = '盒子旋转归零（转盒模式后用）';
-    rb.style.cssText = 'border:none;border-left:1px solid #ded5c4;font:12px "Noto Sans SC",sans-serif;padding:5px 10px;cursor:pointer;white-space:nowrap;background:transparent;color:#5c554a';
+    const rb = document.createElement('button'); rb.textContent = t('Centrar'); rb.title = t('Poner a cero la rotación de la caja (tras Girar caja)');
+    rb.style.cssText = 'border:none;border-left:1px solid #ded5c4;font:12px "Noto Sans",sans-serif;padding:5px 10px;cursor:pointer;white-space:nowrap;background:transparent;color:#5c554a';
     rb.onclick = () => { if (this.props.spin === '1' || !this.boxRoot) return; this.boxRoot.rotation.set(0, 0, 0); };
     this._turnResetBtn = rb; mb.appendChild(rb);
     this.el.appendChild(mb);
@@ -327,7 +351,10 @@ export class BoxEngine {
     this.folder = new Folder(T, sbb, (this.baked || {}).innerUV);
     this.folder.hasEmb = !!(this.props.embOn === '1' && (this.baked || this._lastBakeInput || {}).hasEmb !== false);
     this.folder._dims = this._dims;
-    this.pieces = makePieces(this.props.tpl || 'rte', L, W, H, t, this.num('glue', 14));
+    let custom = null, wrap = null;
+    try { custom = this.props.custom ? JSON.parse(this.props.custom) : null; } catch (_) { custom = null; }
+    try { wrap = this.props.wrap ? JSON.parse(this.props.wrap) : null; } catch (_) { wrap = null; }
+    this.pieces = makePieces(this.props.tpl || 'rte', L, W, H, t, this.num('glue', 14), custom, wrap);
     this.boxRoot = this.folder.build(this.pieces, t, this.faceMat, this.coreMat);
     this.scene.add(this.boxRoot);
     if (this.studio) {
@@ -366,6 +393,18 @@ export class BoxEngine {
     }
     this.applyFlags();
   }
+  applyXray() {
+    const on = this.props.xray === '1';
+    for (const m of [this.faceMat, this.coreMat]) {
+      if (!m) continue;
+      m.transparent = on;
+      m.opacity = on ? 0.24 : 1;
+      m.depthWrite = !on;
+      m.side = on ? THREE.DoubleSide : THREE.FrontSide;
+      m.needsUpdate = true;
+    }
+  }
+
   applyFlags() {
     if (!this._tex) return;
     applyFaceMaterial(this.faceMat, {
@@ -393,7 +432,7 @@ export class BoxEngine {
     if (this.faceMat) this.faceMat.needsUpdate = true;
     if (this.coreMat) this.coreMat.needsUpdate = true;
   }
-  applyFold() { if (this.folder) { this.folder._dims = this._dims; this.folder.applyFold(this.pieces, this.num('fold', 0)); } }
+  applyFold() { if (this.folder) { this.folder._dims = this._dims; try { this.folder.panelOpen = this.props.panelOpen ? JSON.parse(this.props.panelOpen) : {}; } catch (_) { this.folder.panelOpen = {}; } this.folder.applyFold(this.pieces, this.num('fold', 0)); } }
 
   applyStudioControls() {
     if (!this.studio) return;
@@ -429,7 +468,7 @@ export class BoxEngine {
       if (this.stageGround.userData.dispose) this.stageGround.userData.dispose();
       this.stageGround = null;
     }
-    const g = makeStageGround(id || 'none', this.renderer);
+    const g = makeStageGround(id || 'none', this.renderer, this.props.backgroundColor);
     if (g) { this.stageGround = g; this.scene.add(g); }
   }
 
@@ -460,6 +499,32 @@ export class BoxEngine {
     if (!p) return;
     this.camera.position.set(t2.x + p[0], t2.y + p[1], t2.z + p[2]);
     this.controls.update();
+  }
+  // Presets de cámara: hero 3/4, frontal, superior, contrapicado y primer plano
+  setCameraPreset(v) {
+    if (v === 'hero') { this.frame(true); return; }
+    this._fitGoal = null;
+    const R = this._fitR || 300, H = this._fitH || 60, tg = this.controls.target;
+    const o = { front: [0, 0.12, 1, 1], top: [0, 1, 0.01, 1], low: [0.75, 0.04, 0.75, 0.9], close: [0.5, 0.3, 0.5, 0.5] }[v];
+    if (!o) return;
+    const d = new this.T.Vector3(o[0], o[1], o[2]).normalize().multiplyScalar(R * o[3]);
+    if (this.camera.isOrthographicCamera) { this.camera.zoom = v === 'close' ? 1.8 : 1; this.camera.updateProjectionMatrix(); }
+    this.camera.position.copy(tg).add(d);
+    if (v === 'low') tg.y = Math.max(tg.y, H * 0.5);
+    this.controls.update();
+  }
+  // PNG de alta resolución de la vista actual (scale × el tamaño CSS, limitado por la GPU)
+  capture(scale = 2) {
+    const r = this.renderer, w = this.el.clientWidth || 10, h = this.el.clientHeight || 10, pr = r.getPixelRatio();
+    const gl = r.getContext(), maxS = Math.min(8192, gl.getParameter(gl.MAX_TEXTURE_SIZE), gl.getParameter(gl.MAX_RENDERBUFFER_SIZE));
+    const k = Math.min(scale, maxS / Math.max(w, h));
+    const helpers = this.props.lightEdit === '1';
+    if (helpers && this.studio) this.studio.setHelpersVisible(false);
+    r.setPixelRatio(k); r.setSize(w, h, false); r.render(this.scene, this.camera);
+    const done = new Promise(res => r.domElement.toBlob(b => res(b), 'image/png'));
+    if (helpers && this.studio) this.studio.setHelpersVisible(true);
+    r.setPixelRatio(pr); r.setSize(w, h, false);
+    return done;
   }
   frame(smooth = false) {
     const T = this.T;
@@ -522,6 +587,8 @@ export class BoxEngine {
     if (this._ro) this._ro.disconnect();
     if (this._ltDown) this.el.removeEventListener('pointerdown', this._ltDown, true);
     if (this._ltUp) this.el.removeEventListener('pointerup', this._ltUp, true);
+    if (this.renderer && this._pickDown) this.renderer.domElement.removeEventListener('pointerdown', this._pickDown);
+    if (this.renderer && this._pickClick) this.renderer.domElement.removeEventListener('click', this._pickClick);
     this._ltDrag = null; this._ltClick = null;
     clearTimeout(this._bt); clearTimeout(this._at); clearTimeout(this._ft);
     this.setStage('none');

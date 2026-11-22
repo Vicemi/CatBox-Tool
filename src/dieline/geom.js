@@ -2,14 +2,15 @@
 // 2D 视图、3D 网格、PDF 导出全部由本函数派生；按参数 key 缓存。
 // 手动编辑存为覆盖指令流（ovr 节点位移、typeOvr 线型切换），在模板求值结果上重放。
 import { genTuck, genMailer, genTray, genSleeve, genTube } from './templates.js';
+import { genCustom, wrapCustom } from './custom.js';
 
 let _key = null, _val = null;
 
 export function geomOf(s, t) {
-  const key = [s.tpl, s.L, s.W, s.H, t, s.bleed, s.glue].join('|') + '|' + JSON.stringify(s.ovr || {}) + JSON.stringify(s.typeOvr || {});
+  const key = [s.tpl, s.L, s.W, s.H, t, s.bleed, s.glue].join('|') + '|' + JSON.stringify(s.ovr || {}) + JSON.stringify(s.typeOvr || {}) + JSON.stringify(s.custom || {}) + JSON.stringify(s.wrap || {});
   if (_key === key) return _val;
   const r2 = v => Math.round(v * 100) / 100;
-  const o = { segs: [], fills: [], panels: [], safes: [], labels: [], dims: [], arcRuns: [], sbb: [1e9, 1e9, -1e9, -1e9], vbb: [1e9, 1e9, -1e9, -1e9] };
+  const o = { segs: [], fills: [], panels: [], safes: [], labels: [], dims: [], arcRuns: [], slots: [], sbb: [1e9, 1e9, -1e9, -1e9], vbb: [1e9, 1e9, -1e9, -1e9] };
   const tr = (pts, bb) => { for (const p of pts) { if (p[0] < bb[0]) bb[0] = p[0]; if (p[1] < bb[1]) bb[1] = p[1]; if (p[0] > bb[2]) bb[2] = p[0]; if (p[1] > bb[3]) bb[3] = p[1]; } };
   const cut = pts => { tr(pts, o.sbb); tr(pts, o.vbb); o.segs.push({ t: 'cut', pts }); };
   const crease = pts => { tr(pts, o.sbb); tr(pts, o.vbb); o.segs.push({ t: 'crease', pts }); };
@@ -29,19 +30,25 @@ export function geomOf(s, t) {
     if (tag) o.arcRuns.push({ pts: out, p0, pc, p1 });
     return out;
   };
+  // Ranura / encaje: es un corte real (va a la capa CORTE) pero además queda registrado
+  // como feature para preflight, estadísticas y exportación láser.
+  const encaje = (pts, meta = {}) => { cut(pts); o.slots.push({ pts, ...meta }); };
   const rect = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
   const fmt = v => Math.round(v * 10) / 10;
-  const ctx = { cut, crease, fill, panel, region, safeR, label, dimH, dimV, q, rect, fmt };
+  const ctx = { cut, crease, fill, panel, region, safeR, label, dimH, dimV, q, rect, fmt, encaje };
 
   if (s.tpl === 'rte' || s.tpl === 'ste') genTuck(ctx, s, t, s.tpl === 'rte');
   else if (s.tpl === 'mailer') genMailer(ctx, s, t);
+  else if (s.tpl === 'custom') genCustom(ctx, s, t);
+  else if (s.tpl === 'wrap') genCustom(ctx, { ...s, custom: wrapCustom(s) }, t);
   else if (s.tpl === 'cyl') genTube(ctx, s, t, 24, Math.PI * s.L / 24);
   else if (s.tpl === 'hex') genTube(ctx, s, t, 6, s.W);
+  else if (s.tpl === 'tri') genTube(ctx, s, t, 3, s.W);
   else if (s.tpl === 'lidbase') {
-    const w1 = genTray(ctx, s.L, s.W, s.H, 0, '底盒', { prefix: 'base', centerId: 'base-bottom' });
-    genTray(ctx, s.L + 2 * t + 1, s.W + 2 * t + 1, Math.max(14, s.H * 0.45), w1 + 28, '盒盖（+1mm/边 放量）', { prefix: 'lid', centerId: 'lid-top', centerMeta: { role: 'hero', surface: 'outside', up: 'top' } });
+    const w1 = genTray(ctx, s.L, s.W, s.H, 0, 'Base', { prefix: 'base', centerId: 'base-bottom' });
+    genTray(ctx, s.L + 2 * t + 1, s.W + 2 * t + 1, Math.max(14, s.H * 0.45), w1 + 28, 'Tapa (+1 mm por lado)', { prefix: 'lid', centerId: 'lid-top', centerMeta: { role: 'hero', surface: 'outside', up: 'top' } });
   } else if (s.tpl === 'drawer') {
-    const w1 = genTray(ctx, s.L, s.W, s.H, 0, '内盒（抽屉）', { prefix: 'drawer', centerId: 'drawer-bottom' });
+    const w1 = genTray(ctx, s.L, s.W, s.H, 0, 'Caja interior (cajón)', { prefix: 'drawer', centerId: 'drawer-bottom' });
     genSleeve(ctx, s, t, w1 + 28);
   }
 
@@ -58,6 +65,13 @@ export function geomOf(s, t) {
   const len = ty => o.segs.filter(g => g.t === ty).reduce((a, g) => { let l = 0; for (let i = 0; i < g.pts.length - 1; i++) l += Math.hypot(g.pts[i + 1][0] - g.pts[i][0], g.pts[i + 1][1] - g.pts[i][1]); return a + l; }, 0);
   o.cutLen = len('cut'); o.creaseLen = len('crease');
   o.cutN = o.segs.filter(g => g.t === 'cut').length; o.creaseN = o.segs.filter(g => g.t === 'crease').length;
+  o.slotN = o.slots.length;
+  o.slotLen = o.slots.reduce((a, sl) => {
+    if (Number.isFinite(sl.len)) return a + sl.len;
+    let l = 0;
+    for (let i = 0; i < sl.pts.length - 1; i++) l += Math.hypot(sl.pts[i + 1][0] - sl.pts[i][0], sl.pts[i + 1][1] - sl.pts[i][1]);
+    return a + l;
+  }, 0);
   _key = key; _val = o; return o;
 }
 

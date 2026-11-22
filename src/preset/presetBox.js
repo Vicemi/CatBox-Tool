@@ -20,7 +20,9 @@ export async function loadPresetBox() {
   cache = {
     ...patch,
     view: qp.get('view') || 'three',
-    fold: qp.has('fold') ? +qp.get('fold') : 100 // 闭合态成品盒
+    fold: qp.has('fold') ? +qp.get('fold') : 100, // 闭合态成品盒
+    // La envolvente arranca en rayos X para que se vean los separadores y solapas internas.
+    ...(patch.tpl === 'wrap' ? { xray: true } : {})
   };
   return cache;
 }

@@ -14,13 +14,15 @@ export function boxPreviewContextOf(s, m) {
   return { g, bakeKey, sbbKey: g.sbb.join(',') };
 }
 
-export function BoxPreview({ s, m, context, engineRef, fitFold = false, shadowSamples = 5, lightEdit = '0', selLight = '', onLightSelect, onLightEdit }) {
+export function BoxPreview({ s, m, context, engineRef, fitFold = false, shadowSamples = 5, lightEdit = '0', selLight = '', onLightSelect, onLightEdit, onPanelSelect }) {
   const ctx = context || boxPreviewContextOf(s, m);
   return <BoxCanvas
     l={s.L} w={s.W} h={s.H} t={m.t} tpl={s.tpl} fold={s.fold} paper={s.paper3d} film={s.film3d} glue={s.glue} paperTint={s.paperTint3d}
+    custom={s.tpl === 'custom' ? JSON.stringify(s.custom || null) : ''}
+    wrap={s.tpl === 'wrap' ? JSON.stringify(s.wrap || null) : ''}
     layers={s.layers} panels={ctx.g.panels} sbb={ctx.g.sbb} bleed={s.bleed} sbbKey={ctx.sbbKey} bakeKey={ctx.bakeKey}
     foilOn={s.fx.foil ? '1' : '0'} suvOn={s.fx.suv ? '1' : '0'} glossOn={s.fx.gloss !== false ? '1' : '0'} embOn={s.fx.emb ? '1' : '0'} holoOn={s.fx.holo !== false ? '1' : '0'}
-    spin={s.spin ? '1' : '0'} check={s.check}
+    spin={s.spin ? '1' : '0'} check={s.check} xray={s.xray ? '1' : '0'}
     studio={s.studio3d} environment={s.environment3d} stage={s.stage3d} exposure={s.expo3d}
     environmentIntensity={s.envIntensity3d} environmentRotation={s.envRotation3d}
     backgroundShown={s.showEnvironmentBackground ? '1' : '0'} backgroundMode={s.backgroundMode3d} backgroundColor={s.backgroundColor3d} backgroundBlur={s.backgroundBlur3d}
@@ -35,7 +37,9 @@ export function BoxPreview({ s, m, context, engineRef, fitFold = false, shadowSa
     toneMapping={s.toneMapping3d}
     shadowSamples={shadowSamples}
     lightEdit={lightEdit} selLight={selLight} onLightSelect={onLightSelect} onLightEdit={onLightEdit}
+    onPanelSelect={onPanelSelect}
     fitFold={fitFold ? '1' : '0'}
+    panelOpen={s.panelOpen3d && Object.keys(s.panelOpen3d).length ? JSON.stringify(s.panelOpen3d) : ''}
     embDepth={'' + s.embDepth} embSharpness={s.embSharpness3d} embDir={s.embDir} embBoost={s.embBoost ? '1' : '0'}
     engineRef={engineRef} />;
 }

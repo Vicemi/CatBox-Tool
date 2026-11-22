@@ -9,5 +9,6 @@ import { loadPresetBox } from './preset/presetBox.js';
 const debugScene = ['heroTest', 'embTest', 'surfaceTest'].some(k => new URLSearchParams(location.search).has(k));
 loadPresetBox().catch(() => null).then(preset => {
   if (preset && !debugScene) store.reset(preset);
+  window.__boxStore = store; // handle de inspección local (sin datos de usuario fuera del navegador)
   createRoot(document.getElementById('root')).render(<App />);
 });

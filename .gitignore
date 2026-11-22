@@ -1,7 +1,45 @@
+# Dependencias y builds
 node_modules/
 dist/
+dist-ssr/
+src-tauri/target/
+src-tauri/gen/schemas/
+*.tsbuildinfo
+
+# Datos locales / salidas
 data/
 outputs/
 .tmp/
-.DS_Store
+screenshots/
+*.boxproj
+
+# Entorno y secretos
+.env
+.env.*
+!.env.example
 *.local
+*.pem
+*.key
+
+# Herramientas de agentes / IA (pueden contener rutas, permisos o datos locales)
+.claude/
+.serena/
+.impeccable/
+.opencode/
+.codebase-memory/
+.mcp.json
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+
+# Editores y sistema
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
