@@ -602,7 +602,7 @@ function nodeTree(n, lay) {
     angle: n.angle == null ? 90 : n.angle,
     kids
   };
-  if (['round', 'chamfer', 'arch', 'taper', 'triangle', 'rttri', 'notch', 'wave', 'wrap-flap', 'side-tab', 'disc'].includes(n.shape)) {
+  if (['round', 'chamfer', 'arch', 'taper', 'triangle', 'rttri', 'mushroom', 'notch', 'wave', 'wrap-flap', 'side-tab', 'disc'].includes(n.shape)) {
     base.shape = 'poly'; base.pts = n.shapePts;
   } else if (n.shape === 'lid') {
     base.shape = 'lid';
@@ -789,33 +789,61 @@ const selfSlit = (x1, y1, x2, y2, w = SELF_SLOT) => ({ x1, y1, x2, y2, w });
 function slicePanels(state, equal = false) {
   const side = Math.max(80, Math.min(400, +state.L || 140));
   const H = Math.max(20, Math.min(200, +state.H || 44));
-  const tab = Math.max(10, Math.min(22, H * 0.4));
-  const ear = Math.min(14, Math.max(8, H * 0.28));
   if (equal) {
     const alt = side * Math.sqrt(3) / 2;
+    const cornerW = Math.min(28, H * 0.6);
+    const cornerSlot = Math.max(12, cornerW * 0.72);
+    const tabW = Math.max(36, side * 0.66);
+    const tabSlot = Math.max(18, tabW * 0.58);
     const p = 'eq';
     return [
       selfPanel(p + '-base', 'Fondo triangular', null, 'far', side, alt, { shape: 'triangle', role: 'hero' }),
       selfPanel(p + '-back', 'Dorso', p + '-base', 'e0', side, H, { sign: 1 }),
-      selfPanel(p + '-right', 'Lateral derecho', p + '-base', 'e1', side, H, { sign: 1 }),
-      selfPanel(p + '-left', 'Lateral izquierdo', p + '-base', 'e2', side, H, { sign: 1, slits: [selfSlit(side * 0.12, H - tab, side * 0.88, H - tab)] }),
+      selfPanel(p + '-right', 'Lateral derecho', p + '-base', 'e1', side, H, {
+        sign: 1, slits: [
+          selfSlit(16, H * 0.5 - cornerSlot / 2, 16, H * 0.5 + cornerSlot / 2),
+          selfSlit(side - 16, H * 0.5 - cornerSlot / 2, side - 16, H * 0.5 + cornerSlot / 2)
+        ]
+      }),
+      selfPanel(p + '-left', 'Lateral izquierdo', p + '-base', 'e2', side, H, {
+        sign: 1, slits: [
+          selfSlit(side * 0.5 - tabSlot / 2, H - 20, side * 0.5 + tabSlot / 2, H - 20),
+          selfSlit(16, H * 0.5 - cornerSlot / 2, 16, H * 0.5 + cornerSlot / 2),
+          selfSlit(side - 16, H * 0.5 - cornerSlot / 2, side - 16, H * 0.5 + cornerSlot / 2)
+        ]
+      }),
       selfPanel(p + '-lid', 'Tapa unida', p + '-back', 'far', side, alt, { shape: 'triangle', sign: 1 }),
-      selfPanel(p + '-tab', 'Lengüeta', p + '-lid', 'e1', side, tab, { shape: 'tuck', sign: 1 }),
-      selfPanel(p + '-ear-back', 'Oreja dorso derecha', p + '-back', 'xmax', H, ear, { shape: 'ear', sign: 1 }),
-      selfPanel(p + '-ear-back-left', 'Oreja dorso izquierda', p + '-back', 'xmin', H, ear, { shape: 'ear', sign: 1 })
+      selfPanel(p + '-tab', 'Lengüeta de encaje', p + '-lid', 'e1', tabW, 20, { shape: 'mushroom', sign: 1 }),
+      selfPanel(p + '-tab-back', 'Pestaña dorso derecha', p + '-back', 'xmax', cornerW, 16, { shape: 'mushroom', sign: 1 }),
+      selfPanel(p + '-tab-back-left', 'Pestaña dorso izquierda', p + '-back', 'xmin', cornerW, 16, { shape: 'mushroom', sign: 1 })
     ];
   }
   const hyp = side * Math.SQRT2;
+  const cornerW = Math.min(28, H * 0.6);
+  const cornerSlot = Math.max(12, cornerW * 0.72);
+  const tabW = Math.max(36, hyp * 0.62);
+  const tabSlot = Math.max(18, tabW * 0.58);
   const p = 'slice';
   return [
     selfPanel(p + '-base', 'Fondo de rebanada', null, 'far', side, side, { shape: 'rttri', role: 'hero' }),
     selfPanel(p + '-back', 'Dorso', p + '-base', 'e0', side, H, { sign: 1 }),
-    selfPanel(p + '-front', 'Frente inclinado', p + '-base', 'e1', hyp, H, { sign: 1, slits: [selfSlit(hyp * 0.12, H - tab, hyp * 0.88, H - tab)] }),
-    selfPanel(p + '-left', 'Lateral', p + '-base', 'e2', side, H, { sign: 1 }),
+    selfPanel(p + '-front', 'Frente inclinado', p + '-base', 'e1', hyp, H, {
+      sign: 1, slits: [
+        selfSlit(hyp * 0.5 - tabSlot / 2, H - 20, hyp * 0.5 + tabSlot / 2, H - 20),
+        selfSlit(16, H * 0.5 - cornerSlot / 2, 16, H * 0.5 + cornerSlot / 2),
+        selfSlit(hyp - 16, H * 0.5 - cornerSlot / 2, hyp - 16, H * 0.5 + cornerSlot / 2)
+      ]
+    }),
+    selfPanel(p + '-left', 'Lateral', p + '-base', 'e2', side, H, {
+      sign: 1, slits: [
+        selfSlit(16, H * 0.5 - cornerSlot / 2, 16, H * 0.5 + cornerSlot / 2),
+        selfSlit(side - 16, H * 0.5 - cornerSlot / 2, side - 16, H * 0.5 + cornerSlot / 2)
+      ]
+    }),
     selfPanel(p + '-lid', 'Tapa unida', p + '-back', 'far', side, side, { shape: 'rttri', sign: 1 }),
-    selfPanel(p + '-tab', 'Lengüeta frontal', p + '-lid', 'e1', hyp, tab, { shape: 'tuck', sign: 1 }),
-    selfPanel(p + '-ear-back', 'Oreja dorso derecha', p + '-back', 'xmax', H, ear, { shape: 'ear', sign: 1 }),
-    selfPanel(p + '-ear-back-left', 'Oreja dorso izquierda', p + '-back', 'xmin', H, ear, { shape: 'ear', sign: 1 })
+    selfPanel(p + '-tab', 'Lengüeta de encaje', p + '-lid', 'e1', tabW, 20, { shape: 'mushroom', sign: 1 }),
+    selfPanel(p + '-tab-back', 'Pestaña dorso derecha', p + '-back', 'xmax', cornerW, 16, { shape: 'mushroom', sign: 1 }),
+    selfPanel(p + '-tab-back-left', 'Pestaña dorso izquierda', p + '-back', 'xmin', cornerW, 16, { shape: 'mushroom', sign: 1 })
   ];
 }
 
@@ -823,21 +851,27 @@ function onePiecePanels(state) {
   const L = Math.max(20, Math.min(1200, +state.L || 84));
   const W = Math.max(20, Math.min(1200, +state.W || 84));
   const H = Math.max(20, Math.min(1200, +state.H || 44));
-  const tab = Math.max(10, Math.min(24, H * 0.35));
-  const ear = Math.min(14, Math.max(8, H * 0.28));
+  const tab = Math.max(18, Math.min(28, H * 0.45));
+  const cornerW = Math.min(28, H * 0.6);
+  const cornerSlot = Math.max(12, cornerW * 0.72);
+  const tabW = Math.max(30, L * 0.8);
+  const tabSlot = Math.max(18, tabW * 0.58);
+  const cslit = x => selfSlit(x, H * 0.5 - cornerSlot / 2, x, H * 0.5 + cornerSlot / 2);
   const p = 'one';
   return [
     selfPanel(p + '-base', 'Fondo', null, 'far', L, W, { role: 'hero' }),
-    selfPanel(p + '-front', 'Frente', p + '-base', 'near', L, H, { sign: 1, slits: [selfSlit(L * 0.1, H - tab, L * 0.9, H - tab)] }),
+    selfPanel(p + '-front', 'Frente', p + '-base', 'near', L, H, {
+      sign: 1, slits: [selfSlit(L * 0.5 - tabSlot / 2, H - tab, L * 0.5 + tabSlot / 2, H - tab), cslit(12), cslit(L - 12)]
+    }),
     selfPanel(p + '-back', 'Dorso', p + '-base', 'far', L, H, { sign: 1 }),
-    selfPanel(p + '-left', 'Lateral izquierdo', p + '-base', 'xmin', W, H, { sign: 1 }),
-    selfPanel(p + '-right', 'Lateral derecho', p + '-base', 'xmax', W, H, { sign: 1 }),
+    selfPanel(p + '-left', 'Lateral izquierdo', p + '-base', 'xmin', W, H, { sign: 1, slits: [cslit(W - 12)] }),
+    selfPanel(p + '-right', 'Lateral derecho', p + '-base', 'xmax', W, H, { sign: 1, slits: [cslit(W - 12)] }),
     selfPanel(p + '-lid', 'Tapa unida', p + '-back', 'far', L, W, { sign: 1 }),
-    selfPanel(p + '-tab', 'Lengüeta', p + '-lid', 'far', Math.max(20, L - 20), tab, { shape: 'tuck', sign: 1 }),
-    selfPanel(p + '-ear-left', 'Oreja frontal izquierda', p + '-left', 'xmin', H, ear, { shape: 'ear', sign: 1 }),
-    selfPanel(p + '-ear-right', 'Oreja frontal derecha', p + '-right', 'xmax', H, ear, { shape: 'ear', sign: 1 }),
-    selfPanel(p + '-ear-back-left', 'Oreja trasera izquierda', p + '-back', 'xmin', H, ear, { shape: 'ear', sign: 1 }),
-    selfPanel(p + '-ear-back-right', 'Oreja trasera derecha', p + '-back', 'xmax', H, ear, { shape: 'ear', sign: 1 })
+    selfPanel(p + '-tab', 'Lengüeta de encaje', p + '-lid', 'far', tabW, tab, { shape: 'mushroom', sign: 1 }),
+    selfPanel(p + '-tab-left', 'Pestaña frontal izquierda', p + '-left', 'xmin', cornerW, 16, { shape: 'mushroom', sign: 1 }),
+    selfPanel(p + '-tab-right', 'Pestaña frontal derecha', p + '-right', 'xmax', cornerW, 16, { shape: 'mushroom', sign: 1 }),
+    selfPanel(p + '-tab-back-left', 'Pestaña trasera izquierda', p + '-back', 'xmin', cornerW, 16, { shape: 'mushroom', sign: 1 }),
+    selfPanel(p + '-tab-back-right', 'Pestaña trasera derecha', p + '-back', 'xmax', cornerW, 16, { shape: 'mushroom', sign: 1 })
   ];
 }
 

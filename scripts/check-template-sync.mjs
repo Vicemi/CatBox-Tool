@@ -130,7 +130,7 @@ for (const preset of NET_PRESETS) {
 }
 
 // Todas las siluetas del editor deben generar 2D y 3D sin romper el contrato.
-for (const shape of ['rect', 'round', 'chamfer', 'arch', 'taper', 'triangle', 'rttri', 'notch', 'wave', 'lid', 'tuck', 'dust', 'ear', 'glue', 'wrap-flap', 'side-tab']) {
+for (const shape of ['rect', 'round', 'chamfer', 'arch', 'taper', 'triangle', 'rttri', 'mushroom', 'notch', 'wave', 'lid', 'tuck', 'dust', 'ear', 'glue', 'wrap-flap', 'side-tab']) {
   const custom = {
     mode: 'net',
     panels: [

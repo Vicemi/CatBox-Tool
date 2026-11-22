@@ -17,7 +17,7 @@ Status legend: ☐ todo · ◐ in progress · ☑ done
 - ☑ Visible tool palette (icons + tooltips)
 - ☑ Flap/tab picker (tuck, dust, glue, ear, side tab, chamfer…) with previews
 - ☑ Slots/locks presets (slot, tab-and-slot pair, lock tab)
-- ☑ Self-locking presets: triangular slice (right/equilateral), one-piece tuck box with lid, front tab/slot and corner ears; no glue
+- ☑ Self-locking presets: triangular slice (right/equilateral), one-piece tuck box with hinged lid, mushroom tabs, 0.8 mm slits and corner locks; no glue
 - ☑ Smart checker: detects bad dimensions/overlaps/mismatched tabs and offers one-click fixes
 - ☑ ES/EN/ZH strings
 
@@ -43,7 +43,7 @@ Status legend: ☐ todo · ◐ in progress · ☑ done
 - ☑ Native "Save as" for every export (`src/platform.js` → Rust `pick_save_path` / `write_picked`), verified in the built .exe
 - ☑ In-app dialogs replace alert/confirm/prompt (`src/ui/dialogs.jsx`)
 - ☑ `npm run desktop:dev` / `desktop:build`
-- ☑ Release build: `CatBox Tool_0.1.1_x64-setup.exe` and `.msi`
+- ☑ Release build: `CatBox Tool_0.1.2_x64-setup.exe` and `.msi`
 
 ## 6. Shell strings (agent: haiku — opencode free model stalled and was stopped)
 - ☑ Translate canvas/status-bar/widget strings

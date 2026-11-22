@@ -119,6 +119,19 @@ export function shapePoints(kind, w, h, opt = {}) {
     // Se usa en la caja-rebanada: la tapa y la base comparten la misma silueta.
     return [[0, 0], [w, 0], [0, h]];
   }
+  if (k === 'mushroom') {
+    // Pestaña de encaje tipo seta: cuello estrecho + cabeza ancha.
+    // Entra por una ranura de 0,8 mm y queda retenida al girar la pestaña.
+    return [
+      [0, 0], [w, 0],
+      [w * 0.72, h * 0.36], [w * 0.72, h * 0.50],
+      [w * 0.98, h * 0.57], [w * 0.98, h * 0.82],
+      [w * 0.86, h * 0.95], [w * 0.72, h],
+      [w * 0.28, h], [w * 0.14, h * 0.95],
+      [w * 0.02, h * 0.82], [w * 0.02, h * 0.57],
+      [w * 0.28, h * 0.50], [w * 0.28, h * 0.36]
+    ];
+  }
   if (k === 'notch') {
     const n = Math.max(2, Math.min(w * 0.22, 30));
     return [[0, 0], [w, 0], [w, h], [w / 2 + n, h], [w / 2, h * 0.58], [w / 2 - n, h], [0, h]];
@@ -185,6 +198,7 @@ export const SHAPE_OPTIONS = [
   { id: 'taper', name: 'Estrechada arriba' },
   { id: 'triangle', name: 'Triángulo' },
   { id: 'rttri', name: 'Triángulo rectángulo' },
+  { id: 'mushroom', name: 'Pestaña de encaje (seta)' },
   { id: 'notch', name: 'Muesca central' },
   { id: 'wave', name: 'Borde ondulado' },
   { id: 'side-tab', name: 'Pestaña lateral' }
@@ -205,6 +219,7 @@ export const FLAP_SHAPES = [
   { id: 'taper', name: 'Estrechada', h: 20 },
   { id: 'triangle', name: 'Triángulo', h: 20 },
   { id: 'rttri', name: 'Triángulo rectángulo', h: 20 },
+  { id: 'mushroom', name: 'Pestaña de encaje (seta)', h: 18 },
   { id: 'notch', name: 'Muesca', h: 20 },
   { id: 'wave', name: 'Ondulada', h: 20 },
   { id: 'lid', name: 'Tapa recta', h: 40 }

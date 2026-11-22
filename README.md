@@ -38,6 +38,8 @@ The **My box → presets** menu now includes:
 - **Rebanada autobloqueante** — triangular slice box with a hinged lid, a front tab and a matching slot. Based on a right isosceles triangle (or an equilateral variant).
 - **Caja de una pieza** — rectangular base, four walls, hinged lid, front tab/slot and corner ears. All in one net.
 
+The closures use **mushroom-shaped tabs** (`mushroom`) that pass through **0.8 mm slits** and stay retained: one front tab for the lid and four corner tabs for the walls. There is no glue panel and no separate lid.
+
 These presets are ordinary `tpl: "custom"` nets. They export 2D die lines, fold in the 3D view, accept design layers and use the same laser/print output as the rest of the library. No glue panel is generated.
 
 ## Checks
