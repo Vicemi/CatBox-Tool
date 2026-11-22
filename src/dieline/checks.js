@@ -31,8 +31,17 @@ export function netFindings(c, lay) {
     if (Math.min(n.w, n.h) < 2) add('err', 'La cara «{name}» mide menos de 2 mm.', { name: n.name }, setP(n.id, { w: Math.max(n.w, 10), h: Math.max(n.h, 10) }));
     if (!n.parent) continue;
     const par = lay.byId.get(n.parent);
-    const along = n.edge === 'far' || n.edge === 'near' ? par.w : par.h;
-    const across = n.edge === 'far' || n.edge === 'near' ? par.h : par.w;
+    const polyEdge = /^e\d+$/.test(n.edge);
+    let along, across;
+    if (polyEdge && par.shapePts && par.shapePts.length >= 3) {
+      const i = Number(n.edge.slice(1)) % par.shapePts.length;
+      const p0 = par.shapePts[i], p1 = par.shapePts[(i + 1) % par.shapePts.length];
+      along = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+      across = Math.max(par.w, par.h);
+    } else {
+      along = n.edge === 'far' || n.edge === 'near' ? par.w : par.h;
+      across = n.edge === 'far' || n.edge === 'near' ? par.h : par.w;
+    }
     if (n.w > along + 0.5) add('warn', '«{name}» es más ancha que el borde al que se une ({w} > {max} mm).', { name: n.name, w: r1(n.w), max: r1(along) }, setP(n.id, { w: r1(along) }));
     if (FLAPS.includes(n.shape)) {
       const tuck = n.shape === 'tuck';
