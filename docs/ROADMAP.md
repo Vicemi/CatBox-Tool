@@ -43,7 +43,7 @@ Status legend: ☐ todo · ◐ in progress · ☑ done
 - ☑ Native "Save as" for every export (`src/platform.js` → Rust `pick_save_path` / `write_picked`), verified in the built .exe
 - ☑ In-app dialogs replace alert/confirm/prompt (`src/ui/dialogs.jsx`)
 - ☑ `npm run desktop:dev` / `desktop:build`
-- ☑ Release build: `CatBox Tool_0.1.0_x64-setup.exe` and `.msi`
+- ☑ Release build: `CatBox Tool_0.1.1_x64-setup.exe` and `.msi`
 
 ## 6. Shell strings (agent: haiku — opencode free model stalled and was stopped)
 - ☑ Translate canvas/status-bar/widget strings
