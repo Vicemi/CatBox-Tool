@@ -52,6 +52,7 @@ function assertProject(doc) {
 
 const imageOf = src => new Promise(resolve => {
   if (!src) return resolve(null);
+  if (typeof Image === 'undefined') return resolve(null);
   const img = new Image();
   img.onload = () => resolve(img);
   img.onerror = () => resolve(null);

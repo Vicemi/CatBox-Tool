@@ -80,6 +80,7 @@ export function defaultCustom() {
     panels: [],
     lines: [],
     rootGap: 30,
+    rootMaxW: 0,
     // Envolvente: anchos de las alas exterior/interior.
     outer: 0,
     inner: 0,
@@ -177,6 +178,7 @@ export function normalizeCustom(raw) {
     tabDepth: clamp(num(r.tabDepth, d.tabDepth), 2, 120),
     baseCorner: clamp(num(r.baseCorner, d.baseCorner), 0, 200),
     rootGap: clamp(num(r.rootGap, d.rootGap), 0, 300),
+    rootMaxW: clamp(num(r.rootMaxW, d.rootMaxW), 0, 5000),
     childGap: clamp(num(r.childGap, d.childGap), -50, 100),
     outer: clamp(num(r.outer, 0), 0, 2000),
     inner: clamp(num(r.inner, 0), 0, 2000),
@@ -396,14 +398,19 @@ function layoutPanels(defs, state, t, opts = {}) {
     }
   };
 
-  const shiftTree = (n, dx) => {
+  const shiftTree = (n, dx, dy = 0) => {
     n.rect[0] += dx;
+    n.rect[1] += dy;
     n.O[0] += dx;
-    for (const ch of (childrenOf[n.id] || [])) shiftTree(ch, dx);
+    n.O[1] += dy;
+    for (const ch of (childrenOf[n.id] || [])) shiftTree(ch, dx, dy);
   };
 
   let cursorX = 0;
+  let rowY = 0;
+  let rowH = 0;
   const gap = opts.rootGap == null ? 30 : opts.rootGap;
+  const maxW = opts.rootMaxW == null ? 0 : opts.rootMaxW;
   for (const root of roots) {
     root.rotZ = 0;
     root.rect = [0, 0, root.w, root.h];
@@ -414,9 +421,19 @@ function layoutPanels(defs, state, t, opts = {}) {
     placeChildren(root);
     const treeNodes = nodes.filter(n => n === root || isDescendant(n, root, byId));
     const bb = bboxNodes(treeNodes);
+    const rw = bb[2] - bb[0], rh = bb[3] - bb[1];
+    // Empaquetado en estanterías: si la raíz no cabe en el ancho máximo,
+    // baja a una nueva fila en vez de alargar la plancha indefinidamente.
+    if (maxW > 0 && cursorX > 0 && cursorX + rw > maxW) {
+      cursorX = 0;
+      rowY -= rowH + gap;
+      rowH = 0;
+    }
     const dx = cursorX - bb[0];
-    if (dx) shiftTree(root, dx);
-    cursorX += bb[2] - bb[0] + gap;
+    const dy = rowY - bb[1];
+    if (dx || dy) shiftTree(root, dx, dy);
+    cursorX += rw + gap;
+    rowH = Math.max(rowH, rh);
   }
 
   return {
@@ -447,7 +464,7 @@ function makeLayout(state, t) {
     defs = box.panels;
     maxWall = box.maxWall;
   }
-  const lay = layoutPanels(defs, state, t, { rootGap: c.rootGap, childGap: c.childGap });
+  const lay = layoutPanels(defs, state, t, { rootGap: c.rootGap, childGap: c.childGap, rootMaxW: c.rootMaxW });
   return { ...lay, c, maxWall, L: Math.max(1, state.L), W: Math.max(1, state.W), H: Math.max(1, state.H) };
 }
 
@@ -600,6 +617,10 @@ function nodeTree(n, lay) {
     hinge: n.hinge || undefined,
     rotZ: n.rotZ || 0,
     angle: n.angle == null ? 90 : n.angle,
+    // En las redes custom la cara exterior visible es la cara z=0 (las paredes
+    // pliegan hacia el exterior y el arte queda mirando afuera). El resto de
+    // plantillas conserva la cara z=t.
+    uvFace: 0,
     kids
   };
   if (['round', 'chamfer', 'arch', 'taper', 'triangle', 'rttri', 'mushroom', 'notch', 'wave', 'wrap-flap', 'side-tab', 'disc'].includes(n.shape)) {
