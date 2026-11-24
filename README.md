@@ -40,6 +40,10 @@ The **My box → presets** menu now includes:
 
 The closures use **mushroom-shaped tabs** (`mushroom`) that pass through **0.8 mm slits** and stay retained: one front tab for the lid and four corner tabs for the walls. There is no glue panel and no separate lid.
 
+Free-form faces: a net panel with `shape: "poly"` carries its own outline in `pts` (panel-local mm, hinge from `[0,0]` to `[w,0]`). It cuts, hinges and folds like any other face, so pyramids, slanted hinges and curved lobes (heart lids) work. Art is mapped onto every custom face with its exact local→net transform, and folded custom nets are no longer shown mirrored.
+
+Open a project by URL: `?project=/path/to/file.boxproj` (for example `?project=/samples/demo.boxproj&view=three`) loads that project instead of the sample box.
+
 These presets are ordinary `tpl: "custom"` nets. They export 2D die lines, fold in the 3D view, accept design layers and use the same laser/print output as the rest of the library. No glue panel is generated.
 
 ## Checks

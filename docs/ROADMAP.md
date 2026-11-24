@@ -51,6 +51,13 @@ Status legend: ☐ todo · ◐ in progress · ☑ done
 ## 7. Integration (owner: lead)
 - ◐ Build ☑, all views load without errors and switch ES/EN/ZH ☑; visual review in a visible browser ☐
 
+## 8. Free-form faces and exact art mapping
+- ☑ Free polygon net faces (`shape: 'poly'` + `pts`)
+- ☑ Exact art mapping on custom faces at any hinge angle (`uvAffine`)
+- ☑ Folded custom nets no longer render mirrored (pieces reflected in X)
+- ☑ `?project=<url>` opens a `.boxproj` at startup
+- ☐ UI to draw/edit `poly` outlines (today they come from project files)
+
 ## Known limits / next
 - Nesting packs the bounding box of the whole dieline (no contour interlock, no per-piece split).
 - Templates converted to «Mi caja» lose the 3D assembly info of lid/drawer templates.
