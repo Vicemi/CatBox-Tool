@@ -51,7 +51,7 @@ Status legend: ☐ todo · ◐ in progress · ☑ done
 ## 7. Integration (owner: lead)
 - ◐ Build ☑, all views load without errors and switch ES/EN/ZH ☑; visual review in a visible browser ☐
 
-## 8. Free-form faces and exact art mapping
+## 8. Free-form faces and exact art mapping (v0.1.4)
 - ☑ Free polygon net faces (`shape: 'poly'` + `pts`)
 - ☑ Exact art mapping on custom faces at any hinge angle (`uvAffine`)
 - ☑ Folded custom nets no longer render mirrored (pieces reflected in X)
