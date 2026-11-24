@@ -16,7 +16,17 @@ let cache = null;
 export async function loadPresetBox() {
   if (cache) return cache;
   const qp = new URLSearchParams(location.search); // 调试深链优先：?view=/?fold= 不被预设覆盖
-  const patch = await projectStateOf(presetDoc, 'three'); // 首屏即 3D 视图
+  // ?project=<url of a .boxproj> opens that project instead of the bundled sample (renders, shared links).
+  let doc = presetDoc;
+  if (qp.get('project')) {
+    try {
+      const res = await fetch(qp.get('project'));
+      if (res.ok) doc = await res.json();
+    } catch (err) {
+      console.warn('No se pudo abrir el proyecto de ?project=', err);
+    }
+  }
+  const patch = await projectStateOf(doc, 'three'); // 首屏即 3D 视图
   cache = {
     ...patch,
     view: qp.get('view') || 'three',

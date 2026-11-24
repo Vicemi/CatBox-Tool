@@ -39,10 +39,15 @@ const ROTADD = { far: 0, near: 180, xmin: 90, xmax: 270 };
 const rectPt = (uvRect, up, vp) => [uvRect[0] + up * uvRect[2], uvRect[1] + (1 - vp) * uvRect[3]];
 
 // 面板顶面 UV 重写：顶点(局部 x,y) → 归一(rotZ) → flip → uvRect → 图集 UV；内面 → 纸色角点
-function retopUV(geo, lx, ly, rotZ, flip, uvRect, sbb, innerUV, faceZ) {
+function retopUV(geo, lx, ly, rotZ, flip, uvRect, sbb, innerUV, faceZ, aff) {
   const pos = geo.attributes.position, uv = geo.attributes.uv;
   const sw = sbb[2] - sbb[0], sh = sbb[3] - sbb[1];
   const map = i => {
+    if (aff) { // exact local→net affine (custom nets): valid for any hinge angle
+      const x = pos.getX(i), y = pos.getY(i);
+      uv.setXY(i, (aff[0] + aff[2] * x + aff[4] * y - sbb[0]) / sw, 1 - (aff[1] + aff[3] * x + aff[5] * y - sbb[1]) / sh);
+      return;
+    }
     let [up, vp] = normUV(pos.getX(i) / lx, pos.getY(i) / ly, rotZ);
     if (flip.includes('u')) up = 1 - up;
     if (flip.includes('v')) vp = 1 - vp;
@@ -61,12 +66,15 @@ function retopUV(geo, lx, ly, rotZ, flip, uvRect, sbb, innerUV, faceZ) {
 }
 
 // BoxGeometry（矩形板）：pz 面 = 外面（重映射 + 可高细分承载压纹置换），nz/侧面 = 纸色/纸芯
-function boxUV(geo, lx, ly, t, rotZ, flip, uvRect, sbb, innerUV, faceZ) {
+function boxUV(geo, lx, ly, t, rotZ, flip, uvRect, sbb, innerUV, faceZ, aff) {
   const pos = geo.attributes.position, uv = geo.attributes.uv;
   const sw = sbb[2] - sbb[0], sh = sbb[3] - sbb[1];
   for (let i = 0; i < pos.count; i++) {
     const z = pos.getZ(i);
-    if (Math.abs(z - faceZ) < 1e-6) {
+    if (Math.abs(z - faceZ) < 1e-6 && aff) {
+      const x = pos.getX(i), y = pos.getY(i);
+      uv.setXY(i, (aff[0] + aff[2] * x + aff[4] * y - sbb[0]) / sw, 1 - (aff[1] + aff[3] * x + aff[5] * y - sbb[1]) / sh);
+    } else if (Math.abs(z - faceZ) < 1e-6) {
       let [up, vp] = normUV(pos.getX(i) / lx, pos.getY(i) / ly, rotZ);
       if (flip.includes('u')) up = 1 - up;
       if (flip.includes('v')) vp = 1 - vp;
@@ -123,7 +131,7 @@ export class Folder {
     if (edge === 'xmax') return { px: lx, py: ly, rz: -Math.PI / 2, len: ly };
     return { px: 0, py: 0, rz: Math.PI / 2, len: ly }; // xmin
   }
-  panelMesh(kind, len, out, rotZ, flip, uvRect, pts, faceZ) {
+  panelMesh(kind, len, out, rotZ, flip, uvRect, pts, faceZ, aff) {
     const T = this.T, t = this._t;
     const fz = Number.isFinite(faceZ) ? faceZ : t;
     let geo;
@@ -134,17 +142,17 @@ export class Folder {
       for (let i = 1; i < pts.length; i++) S.lineTo(pts[i][0], pts[i][1]);
       S.closePath();
       geo = new T.ExtrudeGeometry(S, { depth: t, bevelEnabled: false, curveSegments: 4 });
-      retopUV(geo, len, out, rotZ, flip, uvRect, this.sbb, this.innerUV, fz);
+      retopUV(geo, len, out, rotZ, flip, uvRect, this.sbb, this.innerUV, fz, aff);
     } else if (kind === 'rect' || kind === 'lid') {
       // 压纹时高细分（顶面承载置换）；段数随面板尺寸
       const seg = this.hasEmb ? Math.max(40, Math.min(240, Math.round(len * 2.2))) : 1;
       const segY = this.hasEmb ? Math.max(40, Math.min(240, Math.round(out * 2.2))) : 1;
       geo = new T.BoxGeometry(len, out, t, seg, segY, 1);
       geo.translate(len / 2, out / 2, t / 2);
-      boxUV(geo, len, out, t, rotZ, flip, uvRect, this.sbb, this.innerUV, fz);
+      boxUV(geo, len, out, t, rotZ, flip, uvRect, this.sbb, this.innerUV, fz, aff);
     } else {
       geo = new T.ExtrudeGeometry(shapeOf(T, kind, len, out, this._shapeN), { depth: t, bevelEnabled: false, curveSegments: 6 });
-      retopUV(geo, len, out, rotZ, flip, uvRect, this.sbb, this.innerUV, fz);
+      retopUV(geo, len, out, rotZ, flip, uvRect, this.sbb, this.innerUV, fz, aff);
     }
     const m = new T.Mesh(geo, [this.faceMat, this.coreMat]);
     m.castShadow = true; m.receiveShadow = true;
@@ -158,7 +166,7 @@ export class Folder {
     };
     if (depth === 0) {
       const rz = spec.uvRot || 0;
-      const rootMesh = this.panelMesh('rect', spec.lx, spec.ly, rz, flipWithPiece(rz, spec.attach), spec.uv, spec.pts, spec.uvFace);
+      const rootMesh = this.panelMesh('rect', spec.lx, spec.ly, rz, flipWithPiece(rz, spec.attach), spec.uv, spec.pts, spec.uvFace, spec.uvAffine);
       rootMesh.userData.panel = { panelId: spec.panelId, role: spec.role, surface: spec.surface, up: spec.up, heroRegion: spec.heroRegion };
       parentGroup.add(rootMesh);
       for (const kid of (spec.kids || [])) this.buildNode(parentGroup, spec, kid, 1, pc, rz);
@@ -182,7 +190,7 @@ export class Folder {
     fg.position.x = edgeOff;
     g.add(fg);
     this._shapeN = spec.n || null;
-    const mesh = this.panelMesh(spec.shape || 'rect', len, spec.out, rz, flipWithPiece(rz, spec.attach), spec.uv, spec.pts, spec.uvFace);
+    const mesh = this.panelMesh(spec.shape || 'rect', len, spec.out, rz, flipWithPiece(rz, spec.attach), spec.uv, spec.pts, spec.uvFace, spec.uvAffine);
     mesh.userData.panel = { panelId: spec.panelId, role: spec.role, surface: spec.surface, up: spec.up, heroRegion: spec.heroRegion };
     this._shapeN = null;
     // 纸层堆叠：副翼类面板沿法向内缩，消除合盖后的共面 z-fighting
@@ -205,6 +213,9 @@ export class Folder {
       const pg = new T.Group();
       pg.rotation.x = -Math.PI / 2;           // 展开图 XY → 地面，+z → 世界上方
       pg.position.set(0, 0.5, 0);
+      // Custom nets come in 2D (y-down) coordinates: without this reflection the folded box is the
+      // mirror image of the printed net and every face shows its art mirrored.
+      if (pc.mirror) pg.scale.x = -1;
       pc.pg = pg;
       const pv = new T.Group();
       pv.position.set(pc.off[0] + (pc.xOff || 0), pc.yOff || 0, pc.off[1] + (pc.zOff || 0));

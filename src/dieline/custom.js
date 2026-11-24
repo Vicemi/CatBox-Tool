@@ -622,6 +622,8 @@ function nodeTree(n, lay) {
     // pliegan hacia el exterior y el arte queda mirando afuera). El resto de
     // plantillas conserva la cara z=t.
     uvFace: 0,
+    // Exact local→net mapping of this panel (same frame as the mesh), so art lands right at any hinge angle.
+    uvAffine: n.O && n.ex && n.ey ? [n.O[0], n.O[1], n.ex[0], n.ex[1], n.ey[0], n.ey[1]] : undefined,
     kids
   };
   if (['round', 'chamfer', 'arch', 'taper', 'triangle', 'rttri', 'mushroom', 'notch', 'wave', 'wrap-flap', 'side-tab', 'disc', 'poly'].includes(n.shape)) {
@@ -666,6 +668,7 @@ export function customPieces(state) {
     const numOr = (v, d) => Number.isFinite(+v) ? +v : d;
     const piece = {
       tree: { ...tree, lx: root.w, ly: root.h, edge: undefined, out: undefined, w: undefined, attach: undefined },
+      mirror: true,              // see Folder.build: keeps the folded art reading the right way
       sign: numOr(ac.sign, -1),  // -1 pliega hacia la cara exterior
       lift: numOr(ac.lift, 0),
       off: hasAsm ? [0, 0] : [cursor, 0],
