@@ -123,6 +123,7 @@ export function normalizeCustom(raw) {
       h: clamp(num(p.h, 40), 2, 3000),
       shape: p.shape || 'rect',
       n: p.n > 0 ? clamp(Math.round(num(p.n, 24)), 3, 64) : undefined, // lados de la tapa poligonal ('disc')
+      pts: Array.isArray(p.pts) && p.pts.length >= 3 && p.pts.every(q => Array.isArray(q) && Number.isFinite(+q[0]) && Number.isFinite(+q[1])) ? p.pts.map(q => [+q[0], +q[1]]) : undefined,
       corner: clamp(num(p.corner, 0), 0, 200),
       angle: clamp(num(p.angle, 90), 0, 360),
       sign: p.sign === 1 ? 1 : p.sign === -1 ? -1 : undefined,
@@ -294,7 +295,7 @@ function layoutPanels(defs, state, t, opts = {}) {
   };
 
   const polyFrame = (parent, child, edge, off) => {
-    const pts = parent.shapePts || shapePoints(parent.shape, parent.w, parent.h, { corner: parent.corner, hinge: false, n: parent.n });
+    const pts = parent.shapePts || shapePoints(parent.shape, parent.w, parent.h, { corner: parent.corner, hinge: false, n: parent.n, pts: parent.pts });
     const idx = edgeIndex(edge) % pts.length;
     const p0 = pts[idx], p1 = pts[(idx + 1) % pts.length];
     // El motor de plegado espera la bisagra en dirección p1→p0: así el eje +y
@@ -374,7 +375,7 @@ function layoutPanels(defs, state, t, opts = {}) {
     child.hinge = hinge;
     child.attach = ATTACH_OF_ROT[child.rotZ] || 'b';
     child.edgeOffset = off;
-    child.shapePts = shapePoints(child.shape, child.w, child.h, { corner: child.corner, hinge: true, n: child.n });
+    child.shapePts = shapePoints(child.shape, child.w, child.h, { corner: child.corner, hinge: true, n: child.n, pts: child.pts });
     placeChildren(child);
   };
 
@@ -417,7 +418,7 @@ function layoutPanels(defs, state, t, opts = {}) {
     root.O = [0, root.h]; root.ex = [1, 0]; root.ey = [0, -1];
     root.attach = undefined;
     root.edgeOffset = 0;
-    root.shapePts = shapePoints(root.shape, root.w, root.h, { corner: root.corner, hinge: false, n: root.n });
+    root.shapePts = shapePoints(root.shape, root.w, root.h, { corner: root.corner, hinge: false, n: root.n, pts: root.pts });
     placeChildren(root);
     const treeNodes = nodes.filter(n => n === root || isDescendant(n, root, byId));
     const bb = bboxNodes(treeNodes);
@@ -623,7 +624,7 @@ function nodeTree(n, lay) {
     uvFace: 0,
     kids
   };
-  if (['round', 'chamfer', 'arch', 'taper', 'triangle', 'rttri', 'mushroom', 'notch', 'wave', 'wrap-flap', 'side-tab', 'disc'].includes(n.shape)) {
+  if (['round', 'chamfer', 'arch', 'taper', 'triangle', 'rttri', 'mushroom', 'notch', 'wave', 'wrap-flap', 'side-tab', 'disc', 'poly'].includes(n.shape)) {
     base.shape = 'poly'; base.pts = n.shapePts;
   } else if (n.shape === 'lid') {
     base.shape = 'lid';

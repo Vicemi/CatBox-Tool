@@ -66,6 +66,11 @@ export function shapePoints(kind, w, h, opt = {}) {
   const corner = Math.max(0, Math.min(opt.corner == null ? Math.min(4, maxR) : opt.corner, maxR));
   const k = kind || 'rect';
 
+  if (k === 'poly' && Array.isArray(opt.pts) && opt.pts.length >= 3) {
+    // Free polygon in panel-local mm (hinge from [0,0] to [w,0] for child panels).
+    return opt.pts.map(p => [+p[0], +p[1]]);
+  }
+
   if (k === 'round') {
     const rbl = hinge ? 0 : corner;
     return roundedRect(w, h, rbl, rbl, corner, corner);
