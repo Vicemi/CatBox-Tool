@@ -1,6 +1,6 @@
 {
   "name": "catbox-tool",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "CatBox Tool — packaging studio (based on OpenBox3D): dielines, box builder, design, image editor, 3D preview, laser/print output and nesting",
   "license": "MIT",
   "type": "module",
