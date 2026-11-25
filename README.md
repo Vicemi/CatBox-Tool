@@ -39,11 +39,13 @@ CatBox Tool adapta OpenBox3D al español, inglés y chino, suma herramientas par
   - **Lados reales**: en triángulos y cualquier silueta no rectangular, las solapas se apoyan en los lados de verdad y se recortan en inglete para no pisarse en las esquinas.
   - **Perfiles de solapa**: recta, lengüeta, guardapolvo, pegado, asimétrica (recta de un lado, en ángulo del otro), circular, recta + curva, redondeada, seta; inglete y radio de esquina por lado.
   - **Forma libre**: cualquier cara se convierte en vértices editables (arrastrar, añadir, borrar).
+  - **Todo editable**: cada lado puede ser corte, pliegue, punteado o sin línea (también la bisagra), curvarse hacia fuera o hacia dentro, y cada esquina tener su propio radio: una solapa puede ser recta de un lado y redonda del otro.
+  - **Plegado**: sentido (valle/monte) y ángulo de cada cara, con marcas V/M y el ángulo en cada bisagra del plano.
   - **Cortes, pliegues, punteado (perforación), ranuras con extremos redondeados y agujeros circulares**, también visibles como huecos en 3D.
 - **Caras de forma libre** en archivos: una cara con `shape: "poly"` lleva su propio contorno en `pts` (mm locales, bisagra de `[0,0]` a `[w,0]`).
 - **Cajas autobloqueantes sin pegamento**: lengüetas tipo hongo que pasan por ranuras de 0,8 mm, trabas de esquina y tapas con solapa de una sola pieza.
 - **Revisión automática**: detecta caras, solapas y ranuras incoherentes y sugiere correcciones.
-- **Diseño estilo Photoshop**: barra de herramientas con atajos (mover, texto, formas, imagen, mano, zoom, cuentagotas), transformar con tiradores, panel de capas (reordenar, bloquear, opacidad, modos de fusión), alinear y distribuir, selección múltiple y transformación en grupo, degradados, sombras, contorno de texto, máscara de recorte, guías inteligentes y portapapeles.
+- **Diseño estilo Photoshop**: barra de herramientas con atajos (mover, texto, formas, imagen, mano, zoom, cuentagotas), transformar con tiradores, panel de capas (reordenar, bloquear, opacidad, modos de fusión), alinear y distribuir, selección múltiple y transformación en grupo, degradados, sombras, contorno de texto, máscara de recorte, **grupos de capas**, **máscaras de capa pintables** (no destructivas), guías inteligentes y portapapeles.
   - **Pensado para caras no rectangulares**: fondo con la forma exacta de la cara (triángulo, hexágono…), rellenar o ajustar a la cara real, centrar en el centroide y alinear con un borde.
   - Acabados por capa (oro/plata, UV, brillo, holográfico, relieve). Cada capa se recorta a la cara a la que pertenece.
 - **Editor de imágenes**: capas, pincel, borrador, formas, texto, recorte, ajustes y quitar fondo.
@@ -84,11 +86,13 @@ CatBox Tool ports OpenBox3D to Spanish, English and Chinese, and adds more box-b
   - **Real sides**: on triangles and any non-rectangular outline, flaps sit on the true sides and are mitred so they don't overlap at the corners.
   - **Flap profiles**: straight, tuck, dust, glue, asymmetric (straight on one side, angled on the other), circular, straight + curved, rounded, mushroom lock; mitre and corner radius per side.
   - **Free form**: turn any face into editable vertices (drag, add, delete).
+  - **Everything editable**: each side can be a cut, crease, perforation or no line (the hinge too), curve outward or inward, and every corner can have its own radius: a flap can be straight on one side and round on the other.
+  - **Folding**: direction (valley/mountain) and angle per face, with V/M marks and the angle on each hinge of the sheet.
   - **Cuts, creases, perforation lines, rounded-end slots and circular holes**, also shown as openings in 3D.
 - **Free-form faces** in files: a face with `shape: "poly"` carries its own outline in `pts` (panel-local mm, hinge from `[0,0]` to `[w,0]`).
 - **Self-locking boxes, no glue**: mushroom tabs through 0.8 mm slits, corner locks and one-piece tuck lids.
 - **Smart checks**: preflight detects inconsistent faces, flaps and slots and suggests fixes.
-- **Photoshop-style design**: toolbar with shortcuts (move, text, shapes, image, hand, zoom, eyedropper), on-canvas transform, layers panel (reorder, lock, opacity, blend modes), align and distribute, multi-select and group transform, gradients, drop shadows, text outline, clipping mask, smart guides and clipboard.
+- **Photoshop-style design**: toolbar with shortcuts (move, text, shapes, image, hand, zoom, eyedropper), on-canvas transform, layers panel (reorder, lock, opacity, blend modes), align and distribute, multi-select and group transform, gradients, drop shadows, text outline, clipping mask, **layer groups**, **paintable layer masks** (non-destructive), smart guides and clipboard.
   - **Built for non-rectangular faces**: a background with the exact face outline (triangle, hexagon…), fill or fit to the real face, centre on the centroid and align to an edge.
   - Per-layer finishes (gold/silver foil, spot UV, gloss, holographic, emboss). Each layer is clipped to the face it belongs to.
 - **Image editor**: layers, brush, eraser, shapes, text, crop, adjustments and background removal.

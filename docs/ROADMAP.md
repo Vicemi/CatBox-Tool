@@ -69,6 +69,12 @@ Status legend: ☐ todo · ◐ in progress · ☑ done
 - ☑ 3D: render on demand, cached shadows and paper maps, 1×1 empty channels
 - Checks: `node scripts/check-builder-flaps.mjs`, `node scripts/check-builder-shapes.mjs`, `node scripts/check-dxf.mjs`, `npm run check:template-sync`
 
+## 10. v0.2.1 — everything editable
+- ☑ Per-side line type (cut, crease, perforation, none) incl. the hinge (dgeTypes, hingeType); Structure view can remove any line (	ypeOvr: 'none')
+- ☑ Free form: curved sides (ptsB) and radius per corner (ptsR), sides keep their logical index for joins and line types
+- ☑ Fold direction (valley/mountain) and angle per face with V/M marks on the sheet
+- ☑ Designer: layer groups and paintable non-destructive layer masks
+
 ## Known limits / next
 - Nesting packs the bounding box of the whole dieline (no contour interlock, no per-piece split).
 - Templates converted to «Mi caja» lose the 3D assembly info of lid/drawer templates.
