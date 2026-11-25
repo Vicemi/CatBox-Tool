@@ -5,9 +5,12 @@ import { normalizeCustom } from '../dieline/custom.js';
 import { SHEETS, sheetOf } from '../units.js';
 import { itemMatrix, uniqueSheets } from './nesting.js';
 import { saveFile } from '../platform.js';
+import { dashPieces } from './dxf.js';
 
 const n3 = v => (Math.round(v * 1000) / 1000).toString();
 const pathOf = segs => segs.map(sg => 'M' + sg.pts.map(p => n3(p[0]) + ' ' + n3(p[1])).join('L')).join(' ');
+// Punteado como trazos reales (3 mm / 2 mm), igual que en el DXF: el láser lo corta intermitente aunque ignore el dasharray.
+const perfPathOf = segs => segs.filter(sg => sg.t === 'perf').flatMap(sg => dashPieces(sg.pts, 3, 2)).map(([a, b]) => 'M' + n3(a[0]) + ' ' + n3(a[1]) + 'L' + n3(b[0]) + ' ' + n3(b[1])).join(' ');
 
 export function laserSvgOf(s, mat) {
   const g = geomOf(s, mat.t);
@@ -23,6 +26,7 @@ export function laserSvgOf(s, mat) {
   const oy = (pageH - netH) / 2 - b[1];
   const cut = pathOf(g.segs.filter(sg => sg.t === 'cut'));
   const crease = pathOf(g.segs.filter(sg => sg.t === 'crease'));
+  const perf = perfPathOf(g.segs);
   const showPage = c.showPage && !!sheet.w;
   const title = 'Caja ' + (s.L / 10) + ' x ' + (s.W / 10) + ' x ' + (s.H / 10) + ' cm - ' + (mat ? mat.name : '');
   const meta = {
@@ -51,6 +55,7 @@ export function laserSvgOf(s, mat) {
       + '  <g id="PLIEGUE" transform="translate(' + n3(ox) + ' ' + n3(oy) + ')" fill="none" stroke="#0000ff" stroke-width="0.1" stroke-dasharray="3 2" stroke-linecap="round" stroke-linejoin="round" shape-rendering="geometricPrecision">\n'
       + '    <path d="' + crease + '"/>\n'
       + '  </g>\n'
+      + (perf ? '  <g id="PUNTEADO" transform="translate(' + n3(ox) + ' ' + n3(oy) + ')" fill="none" stroke="#0000ff" stroke-width="0.1" stroke-linecap="butt" shape-rendering="geometricPrecision">\n    <path d="' + perf + '"/>\n  </g>\n' : '')
       + '</svg>\n'
   };
 }
@@ -69,6 +74,7 @@ export function nestedSvgOf(s, mat, items, sheetW, sheetH, info = {}) {
   const b = g.sbb, netH = b[3] - b[1];
   const cut = pathOf(g.segs.filter(sg => sg.t === 'cut'));
   const crease = pathOf(g.segs.filter(sg => sg.t === 'crease'));
+  const perf = perfPathOf(g.segs);
   const tf = p => 'matrix(' + itemMatrix(p, netH).map(n3).join(' ') + ') translate(' + n3(-b[0]) + ' ' + n3(-b[1]) + ')';
   const layer = (id, stroke, dash, d) => '  <g id="' + id + '" fill="none" stroke="' + stroke + '" stroke-width="0.1"' + (dash ? ' stroke-dasharray="3 2"' : '') + ' stroke-linecap="round" stroke-linejoin="round" shape-rendering="geometricPrecision">\n'
     + items.map(p => '    <path transform="' + tf(p) + '" d="' + d + '"/>\n').join('') + '  </g>\n';
@@ -80,7 +86,7 @@ export function nestedSvgOf(s, mat, items, sheetW, sheetH, info = {}) {
     + '  <metadata id="openbox3d">' + meta + '</metadata>\n'
     + '  <desc>Corte rojo, pliegue azul. Escala 1:1 en milímetros. Kerf declarado: ' + (info.kerf || 0) + ' mm; aplícalo en el software láser.</desc>\n'
     + '  <g id="PLACA" fill="none" stroke="#b8b0a0" stroke-width="0.2" stroke-dasharray="4 3"><rect x="0" y="0" width="' + n3(sheetW) + '" height="' + n3(sheetH) + '"/></g>\n'
-    + layer('CORTE', '#ff0000', false, cut) + layer('PLIEGUE', '#0000ff', true, crease)
+    + layer('CORTE', '#ff0000', false, cut) + layer('PLIEGUE', '#0000ff', true, crease) + (perf ? layer('PUNTEADO', '#0000ff', false, perf) : '')
     + '</svg>\n';
 }
 
