@@ -37,13 +37,14 @@ export class BoxEngine {
     const p = this.props;
     if (prev.l !== p.l || prev.w !== p.w || prev.h !== p.h || prev.t !== p.t || prev.tpl !== p.tpl || prev.glue !== p.glue || prev.sbbKey !== p.sbbKey || prev.custom !== p.custom || prev.wrap !== p.wrap) {
       clearTimeout(this._bt);
-      this._bt = setTimeout(() => { if (this._disposed) return; this.build(); this.rebake(); this.applyFold(); this.frame(); }, 150);
+      this._bt = setTimeout(() => { if (this._disposed) return; this.build(); this.rebake(); this.applyFold(); this.frame(); this.invalidate(); }, 150);
     } else if (prev.bakeKey !== p.bakeKey) {
       clearTimeout(this._at);
-      this._at = setTimeout(() => { if (this._disposed) return; this.rebake(); }, 150);
+      this._at = setTimeout(() => { if (this._disposed) return; this.rebake(); this.invalidate(); }, 150);
     }
     if (prev.panelOpen !== p.panelOpen) this.applyFold();
     if (prev.fold !== p.fold) {
+      this.touchInteraction();
       this.applyFold();
       clearTimeout(this._ft);
       const fv = this.num('fold', 0);
@@ -55,7 +56,7 @@ export class BoxEngine {
     if (prev.foilRoughness !== p.foilRoughness) this.updateFoilRoughness();
     if (prev.check !== p.check || prev.embOn !== p.embOn || prev.embBoost !== p.embBoost || prev.embDepth !== p.embDepth || prev.film !== p.film || MATERIAL_CONTROL_KEYS.some(k => prev[k] !== p[k])) this.applyFlags();
     if (prev.xray !== p.xray) this.applyXray();
-    if (prev.environment !== p.environment && this.studio) this.studio.setEnvironment(p.environment);
+    if (prev.environment !== p.environment && this.studio) this.envChanged(this.studio.setEnvironment(p.environment));
     if (prev.lightsSpec !== p.lightsSpec && this.studio) { this.studio.setLights(p.lightsSpec); this.studio.updateHelpers(); }
     if (prev.lightEdit !== p.lightEdit && this.studio) this.studio.setHelpersVisible(p.lightEdit === '1');
     if (prev.selLight !== p.selLight && this.studio) this.studio.setHelperSelected(p.selLight || null);
@@ -73,6 +74,26 @@ export class BoxEngine {
       this.camera.fov = nf;
       this.camera.updateProjectionMatrix();
     }
+    this.invalidate(); // 按需渲染：任何属性下发都视为场景可能变化（含阴影图），渲染一帧即可
+  }
+  // —— 按需渲染 ——
+  // 只在场景/相机变化、动画进行时出帧；阴影图（5 个 1024² 样本灯）只在场景内容变化时重画，纯相机环绕不重画。
+  invalidate() { this._shadowDirty = true; this.invalidateView(); }
+  invalidateView() { this._dirty = true; if (!this._raf && this._tick && !this._disposed) this._raf = requestAnimationFrame(this._tick); }
+  envChanged(promise) { if (promise && promise.then) promise.then(() => { if (!this._disposed) this.invalidate(); }); }
+  // 交互（环绕/折叠拖动）期间在高 DPI 屏降到 1×，停手 220ms 后恢复，避免重绘 4× 像素
+  setPixelRatioTo(v) {
+    const r = this.renderer;
+    if (!r || r.getPixelRatio() === v) return;
+    r.setPixelRatio(v); r.setSize(this.el.clientWidth || 10, this.el.clientHeight || 10, false);
+    this.invalidateView();
+  }
+  touchInteraction(hold = true) {
+    const idle = Math.min(devicePixelRatio, 2);
+    if (idle <= 1.25) return;
+    this.setPixelRatioTo(1);
+    clearTimeout(this._prT);
+    if (hold) this._prT = setTimeout(() => { if (!this._disposed) this.setPixelRatioTo(idle); }, 220);
   }
   num(n, d) { const v = parseFloat(this.props[n]); return isNaN(v) ? d : v; }
 
@@ -83,6 +104,7 @@ export class BoxEngine {
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMappingExposure = this.num('exposure', 1.02); this.applyToneMapping();
     r.shadowMap.enabled = new URLSearchParams(location.search).get('shadow') !== '0'; // ?shadow=0 调试（软渲染无头截图用）
+    r.shadowMap.autoUpdate = false; r.shadowMap.needsUpdate = true; // 阴影图按需重画（invalidate 时置 needsUpdate）
     r.shadowMap.type = THREE.PCFShadowMap; // 低半径 PCF 只做边缘抗锯齿；距离相关半影由有限角主光样本产生
     r.domElement.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
     this.el.appendChild(r.domElement);
@@ -96,7 +118,9 @@ export class BoxEngine {
     this.controls.minDistance = 15; this.controls.maxDistance = 5000;
     this.controls.screenSpacePanning = true;
     this.controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
-    this.controls.addEventListener('start', () => { this._pauseSpin = Date.now() + 4000; this._fitGoal = null; }); // 用户接管即中断自动适配过渡
+    this.controls.addEventListener('change', () => this.invalidateView());
+    this.controls.addEventListener('start', () => { this._pauseSpin = Date.now() + 4000; this._fitGoal = null; this.touchInteraction(false); clearTimeout(this._prT); });
+    this.controls.addEventListener('end', () => this.touchInteraction()); // 用户接管即中断自动适配过渡
     r.domElement.addEventListener('dblclick', () => this.frame());
     // Selección de cara en el visor 3D (clic sin arrastre)
     this._pickDown = e => { this._pickX = e.clientX; this._pickY = e.clientY; };
@@ -142,7 +166,7 @@ export class BoxEngine {
     // 回正：转盒后一键归零 boxRoot 旋转；自动旋转（spin）时 rotation.y 被持续驱动，回正无意义故禁用
     const rb = document.createElement('button'); rb.textContent = t('Centrar'); rb.title = t('Poner a cero la rotación de la caja (tras Girar caja)');
     rb.style.cssText = 'border:none;border-left:1px solid #ded5c4;font:12px "Noto Sans",sans-serif;padding:5px 10px;cursor:pointer;white-space:nowrap;background:transparent;color:#5c554a';
-    rb.onclick = () => { if (this.props.spin === '1' || !this.boxRoot) return; this.boxRoot.rotation.set(0, 0, 0); };
+    rb.onclick = () => { if (this.props.spin === '1' || !this.boxRoot) return; this.boxRoot.rotation.set(0, 0, 0); this.invalidate(); };
     this._turnResetBtn = rb; mb.appendChild(rb);
     this.el.appendChild(mb);
     this.syncTurnReset();
@@ -174,6 +198,7 @@ export class BoxEngine {
       if (this._tnDrag) {
         const d = this._tnDrag, total = (e.clientX - d.x0) * 0.01;
         this.turnBox(total - d.done); d.done = total; // 增量式绕盒心转，枢轴不漂
+        this.invalidate();
         this._pauseSpin = Date.now() + 4000;
         return;
       }
@@ -184,6 +209,7 @@ export class BoxEngine {
       this.boxRoot.position.set(d.box0.x + dx, d.box0.y, d.box0.z + dz);
       this.controls.target.set(d.tg0.x + dx, d.tg0.y, d.tg0.z + dz);
       this.controls.update();
+      this.invalidate();
       this._pauseSpin = Date.now() + 4000;
     });
     const endMv = () => { this._mvDrag = null; this._tnDrag = null; };
@@ -227,15 +253,25 @@ export class BoxEngine {
     this.ready = true;
     this.resize(); this.build(); this.rebake(); this.applyFold(); this.frame();
     if (cameraTypeOf(this.props.cameraType) === 'orthographic') this.switchCamera('orthographic');
-    const loop = () => {
+    this._tick = () => {
+      this._raf = 0;
       if (this._disposed) return;
-      this._raf = requestAnimationFrame(loop);
       const now = performance.now(), dt = this._loopAt ? Math.min((now - this._loopAt) / 1000, 0.05) : 1 / 60;
-      this._loopAt = now; this.stepFrame(dt);
-      if (this.props.spin === '1' && this.boxRoot && Date.now() > (this._pauseSpin || 0)) this.turnBox(0.0045);
-      this.controls.update(); r.render(this.scene, this.camera);
+      this._loopAt = now;
+      const goal = !!this._fitGoal;
+      this.stepFrame(dt);
+      const spinning = this.props.spin === '1' && this.boxRoot;
+      if (spinning && Date.now() > (this._pauseSpin || 0)) this.turnBox(0.0045);
+      const moved = this.controls.update();
+      if (moved || this._dirty || goal || spinning) {
+        if (this._shadowDirty || goal || spinning) { r.shadowMap.needsUpdate = true; this._shadowDirty = false; } // 盒体在动 → 阴影也要重画
+        this._dirty = false;
+        r.render(this.scene, this.camera);
+      }
+      if (moved || goal || spinning || this._dirty) { if (!this._raf) this._raf = requestAnimationFrame(this._tick); } // controls 'change' 可能已排过一帧
+      else this._loopAt = 0;
     };
-    loop();
+    this.invalidate();
   }
   // 拖灯：相机射线 ∩ 以盒心为心、半径=该灯 distance（平行光固定 400）的球面，取离当前灯位最近的交点换算 az/el；
   // studio 走 setLights 就地参数更新（同 id 同角色不重建灯），再经 onLightEdit 回传候选
@@ -269,6 +305,7 @@ export class BoxEngine {
     const el = Math.round(Math.min(85, Math.max(5, Math.asin(Math.min(1, Math.max(-1, n.y))) * 180 / Math.PI)) * 10) / 10;
     const next = list.map(l => l.id === d.id ? { ...l, azimuth: az, elevation: el } : l);
     this.studio.setLights(JSON.stringify(next)); this.studio.updateHelpers();
+    this.invalidate();
     if (this.props.onLightEdit) this.props.onLightEdit(d.id, { azimuth: az, elevation: el });
     this._pauseSpin = Date.now() + 4000;
   }
@@ -286,6 +323,7 @@ export class BoxEngine {
       this.camera.top = halfH; this.camera.bottom = -halfH;
     } else this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
+    this.invalidateView();
   }
   syncOrthoFrustum() {
     if (!this.camera || !this.camera.isOrthographicCamera) return;
@@ -293,6 +331,7 @@ export class BoxEngine {
     this.camera.left = -halfH * w / h; this.camera.right = halfH * w / h;
     this.camera.top = halfH; this.camera.bottom = -halfH;
     this.camera.updateProjectionMatrix();
+    this.invalidateView();
   }
 
   // 透视 ↔ 正交：以当前目标距离对应的可见垂直高度换算，避免切换时构图尺度跳变。
@@ -361,6 +400,7 @@ export class BoxEngine {
       this.studio.setHelperTarget(0, H * 0.35, 0); // 灯位 helper 的指向/拖拽球心跟随盒高
       this.studio.setShadowBounds(L, W, H); // 按盒体尺寸收紧阴影相机，保持接触处解析度
     }
+    this.invalidate();
   }
 
   // 图集烘焙：图层/工艺/基材变化时重烘（防抖由 update 控制）
@@ -452,7 +492,7 @@ export class BoxEngine {
     const requestedSamples = shadowQuery.get('dev3d') === '1' ? +shadowQuery.get('shadowSamples') : this.num('shadowSamples', 5);
     const shadowSamples = [3, 5, 7].includes(requestedSamples) ? requestedSamples : 5; // ?shadowSamples=3|5|7 仅用于 Dev3D 性能/视觉对照；默认 5：7 个样本灯 +8 贴图 +env 恰好顶满 16 纹理单元，iridescence 无处安放
     this.studio = setupStudio(this.renderer, this.scene, shadowSamples);
-    this.studio.setEnvironment(this.props.environment || 'studio_small_08');
+    this.envChanged(this.studio.setEnvironment(this.props.environment || 'studio_small_08'));
     this.studio.setLights(this.props.lightsSpec);
     this.studio.setHelpersVisible(this.props.lightEdit === '1');
     this.studio.setHelperSelected(this.props.selLight || null);
@@ -468,8 +508,9 @@ export class BoxEngine {
       if (this.stageGround.userData.dispose) this.stageGround.userData.dispose();
       this.stageGround = null;
     }
-    const g = makeStageGround(id || 'none', this.renderer, this.props.backgroundColor);
+    const g = makeStageGround(id || 'none', this.renderer, this.props.backgroundColor, () => this.invalidate());
     if (g) { this.stageGround = g; this.scene.add(g); }
+    this.invalidate();
   }
 
   setMode(m) {
@@ -499,6 +540,7 @@ export class BoxEngine {
     if (!p) return;
     this.camera.position.set(t2.x + p[0], t2.y + p[1], t2.z + p[2]);
     this.controls.update();
+    this.invalidateView();
   }
   // Presets de cámara: hero 3/4, frontal, superior, contrapicado y primer plano
   setCameraPreset(v) {
@@ -512,6 +554,7 @@ export class BoxEngine {
     this.camera.position.copy(tg).add(d);
     if (v === 'low') tg.y = Math.max(tg.y, H * 0.5);
     this.controls.update();
+    this.invalidateView();
   }
   // PNG de alta resolución de la vista actual (scale × el tamaño CSS, limitado por la GPU)
   capture(scale = 2) {
@@ -524,6 +567,7 @@ export class BoxEngine {
     const done = new Promise(res => r.domElement.toBlob(b => res(b), 'image/png'));
     if (helpers && this.studio) this.studio.setHelpersVisible(true);
     r.setPixelRatio(pr); r.setSize(w, h, false);
+    this.invalidateView(); // setSize 清空了画布，按需渲染下必须补一帧
     return done;
   }
   frame(smooth = false) {
@@ -557,6 +601,7 @@ export class BoxEngine {
       this.syncOrthoFrustum();
     }
     this.controls.update();
+    this.invalidate();
   }
   stepFrame(dt) {
     const g = this._fitGoal;
@@ -590,7 +635,7 @@ export class BoxEngine {
     if (this.renderer && this._pickDown) this.renderer.domElement.removeEventListener('pointerdown', this._pickDown);
     if (this.renderer && this._pickClick) this.renderer.domElement.removeEventListener('click', this._pickClick);
     this._ltDrag = null; this._ltClick = null;
-    clearTimeout(this._bt); clearTimeout(this._at); clearTimeout(this._ft);
+    clearTimeout(this._bt); clearTimeout(this._at); clearTimeout(this._ft); clearTimeout(this._prT);
     this.setStage('none');
     if (this.studio) { this.studio.dispose(); this.studio = null; }
     disposeTextures(this._tex);

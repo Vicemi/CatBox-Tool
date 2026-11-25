@@ -7,6 +7,20 @@ import { paperHeightTile, normalFromHeight, kraftFiberTile } from './paper.js';
 import { paperPreset, filmPreset } from './presets.js';
 
 const mk = (W, H) => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+// 整幅图集 ~9–14 MP：未被工艺占用的通道不再分配整幅画布（1×1 即可，UV 采样结果相同），省内存与烘焙时间
+const mkIf = (need, W, H) => need ? mk(W, H) : mk(1, 1);
+
+// 纸纹高度场与其法线只取决于纸种/纹理参数与图集尺寸，与图层无关：缓存最近一份（Sobel 在 ~10MP 上要 ~100ms+）
+let paperCache = null;
+function paperHeightAndNormal(paper, grainStrength, grainScale, S, W, H, paperNormalStrength) {
+  const key = [paper.grain, grainStrength, grainScale, S, W, H].join('|');
+  if (paperCache && paperCache.key === key) return paperCache;
+  const paperH = mk(W, H), ph = paperH.getContext('2d');
+  ph.fillStyle = '#808080'; ph.fillRect(0, 0, W, H);
+  ph.save(); ph.globalAlpha = Math.min(1, grainStrength); tileDraw(ph, paperHeightTile(paper.grain), S, grainScale, W, H, 'overlay'); ph.restore();
+  paperCache = { key, paperH, normalPaper: normalFromHeight(paperH, paperNormalStrength) };
+  return paperCache;
+}
 
 // 以 mask  canvas（白=作用区）把 overlay canvas 画到 base 上
 function maskDraw(base, overlay, mask) {
@@ -107,7 +121,8 @@ export function bakeAtlas(o) {
   cc0.restore();
 
   // —— 工艺 mask：金箔 / 银箔分通道（albedo 分别染 foilColor / silverColor，不再统一染金） ——
-  const foilC = mk(W, H), silverC = mk(W, H), uvC = mk(W, H), glossC = mk(W, H), holoC = mk(W, H);
+  const has = (f, on) => on && vis.some(l => l.finish === f);
+  const foilC = mkIf(has('foil', foilEnabled), W, H), silverC = mkIf(has('silver', foilEnabled), W, H), uvC = mkIf(has('uv', suvEnabled), W, H), glossC = mkIf(has('gloss', glossEnabled), W, H), holoC = mkIf(has('holo', holoEnabled), W, H);
   const fc = foilC.getContext('2d'), sc = silverC.getContext('2d'), uc = uvC.getContext('2d'), gc = glossC.getContext('2d'), hc = holoC.getContext('2d');
   fc.save(); fc.translate(-ox * S, -oy * S);
   sc.save(); sc.translate(-ox * S, -oy * S);
@@ -153,9 +168,9 @@ export function bakeAtlas(o) {
   // —— metalness：R=iridescence mask、G=膜厚（255=Range 上限，同无厚度图行为）、B=金属度——
   // 三通道打包一张贴图（three.js 分通道采样），为 iridescence 省下一个纹理单元（真机上限 16）
   const metalBase = Math.max(0, Math.min(1, paper.metalBase || 0));
-  const metalC = mk(W, H), mc = metalC.getContext('2d');
+  const metalC = mkIf(anyFoil || hasHolo, W, H), mc = metalC.getContext('2d');
   const mv = Math.round(metalBase * 255);
-  mc.fillStyle = 'rgb(' + mv + ',255,' + mv + ')'; mc.fillRect(0, 0, W, H);
+  mc.fillStyle = 'rgb(' + mv + ',255,' + mv + ')'; mc.fillRect(0, 0, metalC.width, metalC.height);
   if (anyFoil) {
     const full = mk(W, H), fg0 = full.getContext('2d');
     fg0.fillStyle = '#fff'; fg0.fillRect(0, 0, W, H);
@@ -174,29 +189,29 @@ export function bakeAtlas(o) {
 
   // —— 压纹高度：中灰为零，白凸黑凹；顶层覆盖重叠区 ——
   const embSharpness = Math.max(0, Math.min(1, Number.isFinite(+o.embSharpness) ? +o.embSharpness : 0.85));
-  const emb = composeEmbossChannels({ layers: vis.filter(l => l.finish === 'emboss'), panels, W, H, S, ox, oy, fallbackDir: embDir, blurPx: (1 - embSharpness) * Math.max(2, S * 0.4) });
+  const embLayers = vis.filter(l => l.finish === 'emboss');
+  const emb = embLayers.length
+    ? composeEmbossChannels({ layers: embLayers, panels, W, H, S, ox, oy, fallbackDir: embDir, blurPx: (1 - embSharpness) * Math.max(2, S * 0.4) })
+    : { signed: (() => { const c = mk(1, 1), g = c.getContext('2d'); g.fillStyle = '#808080'; g.fillRect(0, 0, 1, 1); return c; })(), up: mk(1, 1), down: mk(1, 1), any: mk(1, 1), hasUp: false, hasDown: false, hasEmb: false }; // 无压纹层：不分配 5 张整幅画布
   const dispC = emb.signed, embBlur = emb.any, hasEmb = emb.hasEmb;
 
-  // —— 高度场：纸纹（overlay 微幅）+ 压纹 ——
-  const paperH = mk(W, H), ph = paperH.getContext('2d');
-  ph.fillStyle = '#808080'; ph.fillRect(0, 0, W, H);
-  ph.save(); ph.globalAlpha = Math.min(1, grainStrength); tileDraw(ph, paperHeightTile(paper.grain), S, grainScale, W, H, 'overlay'); ph.restore();
-  const fullH = mk(W, H), fh = fullH.getContext('2d');
-  fh.drawImage(paperH, 0, 0);
+  // —— 高度场：纸纹（overlay 微幅）+ 压纹；纸纹及其法线走缓存，无压纹时法线图与纸纹法线共用一张 ——
+  const paperNormalStrength = 0.45 + grainStrength * 1.2;
+  const { paperH, normalPaper } = paperHeightAndNormal(paper, grainStrength, grainScale, S, W, H, paperNormalStrength);
+  let normalFull = normalPaper;
   if (hasEmb) {
+    const fullH = mk(W, H), fh = fullH.getContext('2d');
+    fh.drawImage(paperH, 0, 0);
     fh.save();
     fh.globalCompositeOperation = 'overlay'; fh.globalAlpha = 0.9; fh.drawImage(dispC, 0, 0);
     fh.restore();
+    normalFull = normalFromHeight(fullH, paperNormalStrength + embDepth * 9 * (embBoost ? 3 : 1));
   }
-  const boost = embBoost ? 3 : 1;
-  const paperNormalStrength = 0.45 + grainStrength * 1.2;
-  const normalPaper = normalFromHeight(paperH, paperNormalStrength);
-  const normalFull = normalFromHeight(fullH, paperNormalStrength + (hasEmb ? embDepth * 9 * boost : 0));
 
   // —— roughness：基材基础值；压纹压光区降低；箔区（金/银统一）foilRoughness ——
-  const roughC = mk(W, H), rc = roughC.getContext('2d');
+  const roughC = mkIf(hasEmb || hasGloss || anyFoil || hasHolo, W, H), rc = roughC.getContext('2d');
   const rv = 255;
-  rc.fillStyle = 'rgb(' + rv + ',' + rv + ',' + rv + ')'; rc.fillRect(0, 0, W, H);
+  rc.fillStyle = 'rgb(' + rv + ',' + rv + ',' + rv + ')'; rc.fillRect(0, 0, roughC.width, roughC.height);
   if (hasEmb) {
     const smooth = mk(W, H), sg = smooth.getContext('2d');
     const sv = 190;
@@ -223,19 +238,25 @@ export function bakeAtlas(o) {
   }
 
   // —— clearcoat：覆膜基础值（map 驱动）+ 局部 UV 区 ——
-  const ccC = mk(W, H), ccRC = mk(W, H);
+  const ccC = mkIf(hasSuv, W, H), ccRC = mkIf(hasSuv, W, H); // 无局部 UV：覆膜值全幅一致，1×1 即可
   paintFilmChannels({ ccC, ccRC, maskUv: uvC, hasSuv }, filmId, o);
 
-  // —— UV 棋盘（20mm/格，检查贴图密度与拉伸） ——
-  const checkerC = mk(W, H), ch = checkerC.getContext('2d');
-  ch.fillStyle = '#efeadd'; ch.fillRect(0, 0, W, H);
-  ch.fillStyle = '#cfc8b8';
-  const step = 20 * S;
-  for (let y = 0, r = 0; y < H; y += step, r++) for (let x = (r % 2) * step; x < W; x += 2 * step) ch.fillRect(x, y, step, step);
-  ch.strokeStyle = '#c9542e'; ch.lineWidth = Math.max(2, S * 0.5); ch.strokeRect(0, 0, W, H);
+  // —— UV 棋盘（20mm/格，检查贴图密度与拉伸）：仅「棋盘」检查模式用到，按需生成 ——
+  let checkerC = null;
+  const makeChecker = () => {
+    if (checkerC) return checkerC;
+    checkerC = mk(W, H);
+    const ch = checkerC.getContext('2d');
+    ch.fillStyle = '#efeadd'; ch.fillRect(0, 0, W, H);
+    ch.fillStyle = '#cfc8b8';
+    const step = 20 * S;
+    for (let y = 0, r = 0; y < H; y += step, r++) for (let x = (r % 2) * step; x < W; x += 2 * step) ch.fillRect(x, y, step, step);
+    ch.strokeStyle = '#c9542e'; ch.lineWidth = Math.max(2, S * 0.5); ch.strokeRect(0, 0, W, H);
+    return checkerC;
+  };
 
   return {
-    colorC, normalPaper, normalFull, roughC, metalC, ccC, ccRC, dispC, checkerC,
+    colorC, normalPaper, normalFull, roughC, metalC, ccC, ccRC, dispC, makeChecker,
     maskFoil: foilC, maskSilver: silverC, maskUv: uvC, maskGloss: glossC, maskHolo: holoC, maskEmbUp: emb.up, maskEmbDown: emb.down,
     hasFoil: anyFoil, hasSilver, hasSuv, hasGloss, hasEmb, hasHolo, hasEmbUp: emb.hasUp, hasEmbDown: emb.hasDown, S, W, H,
     // UV 必须按实际烘焙画布（含出血外扩与像素取整）归一化；若仍使用原始 sbb，

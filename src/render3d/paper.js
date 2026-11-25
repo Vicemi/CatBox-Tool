@@ -49,16 +49,22 @@ export function normalFromHeight(heightCanvas, strength) {
   const W = heightCanvas.width, H = heightCanvas.height;
   const src = heightCanvas.getContext('2d').getImageData(0, 0, W, H).data;
   const out = document.createElement('canvas'); out.width = W; out.height = H;
-  const g = out.getContext('2d'); const od = g.createImageData(W, H);
-  const hv = (x, y) => src[(((y + H) % H) * W + ((x + W) % W)) * 4] / 255;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const gx = (hv(x + 1, y) - hv(x - 1, y)) * strength;
-    const gy = (hv(x, y + 1) - hv(x, y - 1)) * strength;
-    const inv = 1 / Math.sqrt(gx * gx + gy * gy + 1);
-    const i = (y * W + x) * 4;
-    od.data[i] = (-gx * inv * 0.5 + 0.5) * 255;
-    od.data[i + 1] = (gy * inv * 0.5 + 0.5) * 255;
-    od.data[i + 2] = inv * 255; od.data[i + 3] = 255;
+  const g = out.getContext('2d'); const od = g.createImageData(W, H), dst = od.data;
+  // 热点循环（~10MP）：无闭包、取模改为预计算的左右邻列；输出写 Uint8ClampedArray（自动取整/钳位）
+  const xl = new Int32Array(W), xr = new Int32Array(W);
+  for (let x = 0; x < W; x++) { xl[x] = ((x - 1 + W) % W) << 2; xr[x] = ((x + 1) % W) << 2; }
+  const k = strength / 255;
+  for (let y = 0; y < H; y++) {
+    const row = y * W, up = ((y - 1 + H) % H) * W, dn = ((y + 1) % H) * W;
+    for (let x = 0; x < W; x++) {
+      const gx = (src[row * 4 + xr[x]] - src[row * 4 + xl[x]]) * k;
+      const gy = (src[(dn + x) << 2] - src[(up + x) << 2]) * k;
+      const inv = 1 / Math.sqrt(gx * gx + gy * gy + 1);
+      const i = (row + x) << 2;
+      dst[i] = (-gx * inv * 0.5 + 0.5) * 255;
+      dst[i + 1] = (gy * inv * 0.5 + 0.5) * 255;
+      dst[i + 2] = inv * 255; dst[i + 3] = 255;
+    }
   }
   g.putImageData(od, 0, 0);
   return out;

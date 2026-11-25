@@ -36,7 +36,7 @@ function makeCyclorama(color) {
   return mesh;
 }
 
-export function makeStageGround(id, renderer, color = '#f4f4f2') {
+export function makeStageGround(id, renderer, color = '#f4f4f2', onChange = null) {
   const spec = stagePreset(id);
   if (!spec || spec.id === 'none') return null;
   if (spec.cyc) return makeCyclorama(color);
@@ -63,7 +63,7 @@ export function makeStageGround(id, renderer, color = '#f4f4f2') {
       t.repeat.set(repeat, repeat);
       t.anisotropy = renderer.capabilities.getMaxAnisotropy();
       if (srgb) t.colorSpace = THREE.SRGBColorSpace;
-      if (--pending === 0) { mat.map = texs[0]; mat.roughnessMap = texs[2]; mat.normalMap = texs[1]; mat.roughness = 1; mat.color.set(0xffffff); mat.needsUpdate = true; }
+      if (--pending === 0) { mat.map = texs[0]; mat.roughnessMap = texs[2]; mat.normalMap = texs[1]; mat.roughness = 1; mat.color.set(0xffffff); mat.needsUpdate = true; if (onChange) onChange(); }
     });
     texs.push(t);
     return t;

@@ -9,26 +9,38 @@ export function makeAtlasTextures(baked) {
     x.anisotropy = 8;
     return x;
   };
-  // 检查模式「烫金版」显示金+银并集 mask（maskFoil 画布本体保持金箔单通道，供粗糙度重绘）
-  const foilAll = baked.maskSilver ? (() => {
-    const c = document.createElement('canvas'); c.width = baked.maskFoil.width; c.height = baked.maskFoil.height;
-    const g = c.getContext('2d'); g.drawImage(baked.maskFoil, 0, 0); g.drawImage(baked.maskSilver, 0, 0);
-    return c;
-  })() : baked.maskFoil;
-  return {
+  const tex = {
     map: mk(baked.colorC, true),
-    normal: mk(baked.normalFull), normalPaper: mk(baked.normalPaper),
+    normal: mk(baked.normalFull), normalPaper: baked.normalFull === baked.normalPaper ? null : mk(baked.normalPaper),
     rough: mk(baked.roughC), metal: mk(baked.metalC),
     cc: mk(baked.ccC), ccR: mk(baked.ccRC),
-    disp: mk(baked.dispC),
-    checker: mk(baked.checkerC, true),
-    maskFoil: mk(foilAll, true), maskUv: mk(baked.maskUv, true), maskGloss: mk(baked.maskGloss, true), maskHolo: baked.maskHolo ? mk(baked.maskHolo, true) : null, dispCheck: mk(baked.dispC, true)
+    disp: mk(baked.dispC)
   };
+  if (!tex.normalPaper) tex.normalPaper = tex.normal; // 无压纹：两张法线是同一幅画布，共用一个纹理（只上传一次）
+  // 检查模式专用贴图：首次访问才建（画布与纹理都不为日常「成品」视图占内存）；检查模式「烫金版」显示金+银并集 mask
+  const lazy = (name, make) => {
+    let v;
+    Object.defineProperty(tex, name, { enumerable: false, configurable: true, get: () => v || (v = make()), });
+    tex._lazyDispose = (tex._lazyDispose || []).concat(() => v && v.dispose());
+  };
+  lazy('checker', () => mk(baked.makeChecker(), true));
+  lazy('maskFoil', () => {
+    const c = document.createElement('canvas'); c.width = Math.max(baked.maskFoil.width, baked.maskSilver.width); c.height = Math.max(baked.maskFoil.height, baked.maskSilver.height);
+    const g = c.getContext('2d');
+    [baked.maskFoil, baked.maskSilver].forEach(m => { if (m.width > 1) g.drawImage(m, 0, 0); });
+    return mk(c, true);
+  });
+  lazy('maskUv', () => mk(baked.maskUv, true));
+  lazy('maskGloss', () => mk(baked.maskGloss, true));
+  lazy('maskHolo', () => baked.maskHolo ? mk(baked.maskHolo, true) : null);
+  lazy('dispCheck', () => mk(baked.dispC, true));
+  return tex;
 }
 
 export function disposeTextures(tex) {
   if (!tex) return;
-  Object.values(tex).forEach(t => t && t.dispose && t.dispose());
+  new Set(Object.values(tex).filter(t => t && t.dispose)).forEach(t => t.dispose());
+  (tex._lazyDispose || []).forEach(f => f());
 }
 
 // flags: { check:'art'|'foil'|'suv'|'gloss'|'emb'|'checker', embOn, embDepth, embBoost, embDir, hasEmb }
