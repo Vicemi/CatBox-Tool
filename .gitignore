@@ -44,3 +44,5 @@ desktop.ini
 *.log
 npm-debug.log*
 public/samples/
+
+.playwright-cli/
