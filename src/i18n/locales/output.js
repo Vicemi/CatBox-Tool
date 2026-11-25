@@ -129,7 +129,14 @@ const ROWS = [
   ['UV local', 'Spot UV', '局部 UV'],
   ['Brillo', 'Gloss', '亮光'],
   ['Relieve', 'Emboss', '凹凸'],
-  ['Holográfico', 'Holographic', '镭射']
+  ['Holográfico', 'Holographic', '镭射'],
+  // DXF para láser (R12 / AutoCAD 2000)
+  ['DXF R12 con nesting · 1:1', 'Nested DXF R12 · 1:1', '排版 DXF R12 · 1:1'],
+  ['DXF AutoCAD 2000 con nesting · 1:1', 'Nested DXF AutoCAD 2000 · 1:1', '排版 DXF AutoCAD 2000 · 1:1'],
+  ['Exportar DXF R12 para láser · 1:1', 'Export laser DXF R12 · 1:1', '导出激光 DXF R12 · 1:1'],
+  ['Exportar DXF AutoCAD 2000 para láser · 1:1', 'Export laser DXF AutoCAD 2000 · 1:1', '导出激光 DXF AutoCAD 2000 · 1:1'],
+  ['DXF por capas:', 'DXF by layer:', 'DXF 分层：'],
+  ['CORTE en rojo (corte), MARCADO en azul (pliegue) y PUNTEADO en azul discontinuo, con trazos reales de 3 mm / 2 mm. R12 para software antiguo; AutoCAD 2000 como versión moderna.', 'CORTE in red (cut), MARCADO in blue (crease) and PUNTEADO in dashed blue, drawn as real 3 mm / 2 mm dashes. R12 for older software; AutoCAD 2000 as the modern version.', 'CORTE 为红色（切割），MARCADO 为蓝色（压痕），PUNTEADO 为蓝色虚线，并绘制为真实的 3 mm / 2 mm 线段。R12 适用于旧软件；AutoCAD 2000 为较新版本。']
 ];
 
 const en = {}, zh = {};

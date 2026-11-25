@@ -12,6 +12,7 @@ import { normalizeCustom } from '../dieline/custom.js';
 import { exportPDF, exportNestedPDF } from '../export/pdf.js';
 import { exportSeparations } from '../export/separations.js';
 import { exportLaserSVG, exportKerfTest, laserSvgOf, exportNestedSVG } from '../export/svg.js';
+import { exportLaserDXF, exportNestedDXF } from '../export/dxf.js';
 import { nest, polyArea, uniqueSheets, itemMatrix } from '../export/nesting.js';
 import { ST, btnSt, inputSt, selectSt, MmField, Note } from './widgets.jsx';
 import { fmtCm, fmtMm, sheetOf, SHEETS } from '../units.js';
@@ -255,6 +256,8 @@ export function OutputView() {
                 <Lbl>{t('Plancha con nesting')}</Lbl>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 8 }}>
                   <ExpBtn icon={IconFileTypeSvg} tone="#2E7D46" primary={laserT} disabled={!plan || !plan.res.count} onClick={() => runExport(() => exportNestedSVG(s, m, plan.res, plan.W, plan.H, nestInfo))}>{t('SVG láser con nesting · 1:1 · corte + pliegue')}</ExpBtn>
+                  <ExpBtn icon={IconDownload} tone="#2E7D46" disabled={!plan || !plan.res.count} onClick={() => runExport(() => exportNestedDXF(s, m, plan.res, plan.W, plan.H, nestInfo, 'R12'))}>{t('DXF R12 con nesting · 1:1')}</ExpBtn>
+                  <ExpBtn icon={IconDownload} tone="#2E7D46" disabled={!plan || !plan.res.count} onClick={() => runExport(() => exportNestedDXF(s, m, plan.res, plan.W, plan.H, nestInfo, 'R2000'))}>{t('DXF AutoCAD 2000 con nesting · 1:1')}</ExpBtn>
                   <ExpBtn icon={IconFileTypePdf} primary={!laserT} disabled={laserT || !plan || !plan.res.count} onClick={() => runExport(() => exportNestedPDF(s, m, s.pdfMode, plan.res, plan.W, plan.H, nestInfo))}>{t('PDF de imprenta con nesting · marcas de corte y registro')}{laserT ? ' ' + t('(destino Imprenta)') : ''}</ExpBtn>
                 </div>
                 <Lbl>{t('Caja individual')}</Lbl>
@@ -267,6 +270,8 @@ export function OutputView() {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 8 }}>
                   <ExpBtn icon={IconFileTypeSvg} tone="#2E7D46" onClick={() => runExport(() => exportLaserSVG(s, m))}>{t('Exportar SVG para láser · 1:1 · corte + pliegue')}</ExpBtn>
+                  <ExpBtn icon={IconDownload} tone="#2E7D46" onClick={() => runExport(() => exportLaserDXF(s, m, 'R12'))}>{t('Exportar DXF R12 para láser · 1:1')}</ExpBtn>
+                  <ExpBtn icon={IconDownload} tone="#2E7D46" onClick={() => runExport(() => exportLaserDXF(s, m, 'R2000'))}>{t('Exportar DXF AutoCAD 2000 para láser · 1:1')}</ExpBtn>
                   <ExpBtn icon={IconFileTypePdf} onClick={() => runExport(() => exportPDF(s, m, s.pdfMode))}>{t('Exportar PDF de imprenta · 1:1 · tintas directas')}</ExpBtn>
                   <ExpBtn icon={IconDownload} onClick={() => runExport(() => exportSeparations(s, m))}>{t('Separaciones de acabado · oro/UV/brillo/relieve')}</ExpBtn>
                   <ExpBtn icon={IconTestPipe} tone="#6d6557" onClick={() => runExport(() => exportKerfTest())}>{t('Descargar calibración de kerf (20 mm)')}</ExpBtn>
@@ -275,7 +280,8 @@ export function OutputView() {
                   <Note>
                     <b style={{ color: '#3d3830' }}>{t('SVG láser:')}</b> {t('milímetros reales, grupo CORTE en rojo y grupo PLIEGUE en azul discontinuo. El kerf queda declarado en los metadatos y en el nombre del archivo de calibración; aplícalo en LightBurn/RDWorks.')}<br />
                     <b style={{ color: '#3d3830' }}>{t('PDF limpio:')}</b> {t('solo capas de cuatricromía sobre blanco, sin notas de página. Oro/UV/brillo/relieve/holo se entregan en separaciones aparte. Los PDF CMYK son conversiones directas sin ICC; el color final se valida con la prueba de imprenta.')}<br />
-                    <b style={{ color: '#3d3830' }}>{t('Nesting:')}</b> {t('se exporta un archivo (SVG) o una página (PDF) por plancha distinta; las planchas repetidas se indican con ×N. La red se trata como su caja envolvente.')}
+                    <b style={{ color: '#3d3830' }}>{t('Nesting:')}</b> {t('se exporta un archivo (SVG) o una página (PDF) por plancha distinta; las planchas repetidas se indican con ×N. La red se trata como su caja envolvente.')}<br />
+                    <b style={{ color: '#3d3830' }}>{t('DXF por capas:')}</b> {t('CORTE en rojo (corte), MARCADO en azul (pliegue) y PUNTEADO en azul discontinuo, con trazos reales de 3 mm / 2 mm. R12 para software antiguo; AutoCAD 2000 como versión moderna.')}
                   </Note>
                 </div>
               </div>
