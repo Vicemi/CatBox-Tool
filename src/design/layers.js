@@ -72,8 +72,34 @@ export function shapePathD(l) {
   if (!r) return poly([[x, y], [x + w, y], [x + w, y + h], [x, y + h]]);
   return 'M' + f(x + r) + ' ' + f(y) + 'H' + f(x + w - r) + 'A' + f(r) + ' ' + f(r) + ' 0 0 1 ' + f(x + w) + ' ' + f(y + r) + 'V' + f(y + h - r) + 'A' + f(r) + ' ' + f(r) + ' 0 0 1 ' + f(x + w - r) + ' ' + f(y + h) + 'H' + f(x + r) + 'A' + f(r) + ' ' + f(r) + ' 0 0 1 ' + f(x) + ' ' + f(y + h - r) + 'V' + f(y + r) + 'A' + f(r) + ' ' + f(r) + ' 0 0 1 ' + f(x + r) + ' ' + f(y) + 'Z';
 }
+// —— Máscaras de píxeles: PNG en escala de grises (blanco = visible) guardado como data URL en l.mask = {url, on}. ——
+// Caché url → {grey, alpha}: alpha = blanco con la luminancia como alfa (lo que usa destination-in). Se rellena de forma síncrona al pintar y se precarga al abrir un proyecto.
+const maskCache = new Map();
+export const maskOn = l => !!(l && l.mask && l.mask.url && l.mask.on !== false);
+export const maskKeyOf = l => {
+  const m = l && l.mask; if (!m || !m.url) return '';
+  let h = 0; for (let i = 0; i < m.url.length; i += 61) h = (h * 31 + m.url.charCodeAt(i)) | 0;
+  return (m.on === false ? 0 : 1) + ':' + m.url.length + ':' + h;
+};
+export function cacheMask(url, grey) {
+  const a = document.createElement('canvas'); a.width = grey.width; a.height = grey.height;
+  const ag = a.getContext('2d'); ag.drawImage(grey, 0, 0);
+  const d = ag.getImageData(0, 0, a.width, a.height), px = d.data;
+  for (let i = 0; i < px.length; i += 4) { px[i + 3] = Math.round((px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114) * (px[i + 3] / 255)); px[i] = px[i + 1] = px[i + 2] = 255; }
+  ag.putImageData(d, 0, 0);
+  const e = { grey, alpha: a }; maskCache.set(url, e); return e;
+}
+export const loadMask = url => new Promise(resolve => {
+  const c = maskCache.get(url); if (c) return resolve(c);
+  if (typeof Image === 'undefined') return resolve(null);
+  const im = new Image();
+  im.onload = () => { const g = document.createElement('canvas'); g.width = im.naturalWidth; g.height = im.naturalHeight; g.getContext('2d').drawImage(im, 0, 0); resolve(cacheMask(url, g)); };
+  im.onerror = () => resolve(null); im.src = url;
+});
+export const maskEntry = url => maskCache.get(url) || null;
+export const preloadMasks = layers => Promise.all(layers.filter(l => l.mask && l.mask.url).map(l => loadMask(l.mask.url)));
 // Firma de estilo de una capa: BoxPreview.bakeKey (render3d) debe incluirla para re-hornear el 3D al cambiar estos campos.
-export const layerStyleKey = l => [l.blend, l.flipX, l.flipY, l.shape, l.stroke, l.strokeW, l.radius, l.sides, l.innerR, l.fillOn, l.italic, l.letterSpacing, l.lineHeight, l.align, JSON.stringify([l.grad, l.shadow, l.tStroke, l.tStrokeW, l.poly, l.clipMask])].join('|');
+export const layerStyleKey = l => [l.gOp, maskKeyOf(l), l.blend, l.flipX, l.flipY, l.shape, l.stroke, l.strokeW, l.radius, l.sides, l.innerR, l.fillOn, l.italic, l.letterSpacing, l.lineHeight, l.align, JSON.stringify([l.grad, l.shadow, l.tStroke, l.tStrokeW, l.poly, l.clipMask])].join('|');
 
 // —— Degradados, sombras y máscaras (compartidos por el lienzo SVG, el horneado 3D y el PDF) ——
 export const gradStops = (gr, base) => ((gr && gr.stops && gr.stops.length > 1 ? gr.stops : [[0, base || '#9a5b1f'], [1, '#ffffff']]).slice().sort((a, b) => a[0] - b[0]));
@@ -162,6 +188,23 @@ function craftMaskOf(img) {
 
 // Dibuja una capa en un canvas 2D (exportación PDF y horneado 3D comparten esta función)
 export function drawLayer(ctx, l, sc, fill, clipPts) {
+  const hasDoc = typeof document !== 'undefined', me = hasDoc && maskOn(l) ? maskEntry(l.mask.url) : null;
+  if (hasDoc && maskOn(l) && !me) loadMask(l.mask.url).then(e => e && window.dispatchEvent(new Event('catbox-mask-ready')));
+  if (me) { // capa con máscara: se dibuja aparte, se multiplica por la máscara (destination-in) y se compone con su opacidad y fusión
+    const m0 = ctx.getTransform(), tmp = document.createElement('canvas'); tmp.width = ctx.canvas.width; tmp.height = ctx.canvas.height;
+    const tg = tmp.getContext('2d'); tg.setTransform(m0);
+    drawLayer(tg, { ...l, mask: undefined, opacity: 1, gOp: 1, blend: 'normal' }, sc, fill, clipPts);
+    const b = bboxOf(l), cx = (b[0] + b[2] / 2) * sc, cy = (b[1] + b[3] / 2) * sc;
+    tg.globalCompositeOperation = 'destination-in'; tg.translate(cx, cy);
+    if (l.rot) tg.rotate(l.rot * Math.PI / 180);
+    if (l.flipX || l.flipY) tg.scale(l.flipX ? -1 : 1, l.flipY ? -1 : 1);
+    tg.translate(-cx, -cy); tg.drawImage(me.alpha, b[0] * sc, b[1] * sc, b[2] * sc, b[3] * sc);
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = (l.opacity == null ? 1 : l.opacity) * (l.gOp == null ? 1 : l.gOp);
+    if (!fill && l.blend && l.blend !== 'normal') ctx.globalCompositeOperation = l.blend;
+    ctx.drawImage(tmp, 0, 0); ctx.restore();
+    return;
+  }
   ctx.save();
   if (clipPts && clipPts.length > 2) {
     ctx.beginPath();
@@ -176,7 +219,7 @@ export function drawLayer(ctx, l, sc, fill, clipPts) {
     }
     ctx.scale(sc, sc); ctx.clip(new Path2D(shapePathD(cm))); ctx.setTransform(m0);
   }
-  ctx.globalAlpha = l.opacity == null ? 1 : l.opacity;
+  ctx.globalAlpha = (l.opacity == null ? 1 : l.opacity) * (l.gOp == null ? 1 : l.gOp);
   if (!fill && l.blend && l.blend !== 'normal') ctx.globalCompositeOperation = l.blend; // los canales de acabado son máscaras: sin mezcla
   if (l.rot || l.flipX || l.flipY) {
     const b = bboxOf(l), rcx = (b[0] + b[2] / 2) * sc, rcy = (b[1] + b[3] / 2) * sc;

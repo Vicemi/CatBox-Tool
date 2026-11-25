@@ -5,7 +5,8 @@ import {
   IconTypography, IconPhoto, IconSquare, IconCopy, IconEye, IconEyeOff, IconLock, IconLockOpen, IconTrash, IconArrowBackUp, IconArrowForwardUp, IconPhotoEdit, IconPalette,
   IconLayoutAlignLeft, IconLayoutAlignCenter, IconLayoutAlignRight, IconLayoutAlignTop, IconLayoutAlignMiddle, IconLayoutAlignBottom, IconLayoutDistributeHorizontal, IconLayoutDistributeVertical,
   IconFocusCentered, IconArrowsDiagonalMinimize2, IconArrowsMaximize, IconArrowsHorizontal, IconRotate, IconRotateClockwise, IconItalic, IconAlignLeft, IconAlignCenter, IconAlignRight,
-  IconFlipHorizontal, IconFlipVertical, IconLink, IconUnlink, IconGripVertical, IconPolygon, IconShape, IconRulerMeasure, IconScissors
+  IconFlipHorizontal, IconFlipVertical, IconLink, IconUnlink, IconGripVertical, IconPolygon, IconShape, IconRulerMeasure, IconScissors,
+  IconFolder, IconFolderPlus, IconFolderMinus, IconChevronDown, IconChevronRight
 } from '@tabler/icons-react';
 import { store, useStore } from '../state/store.js';
 import { geomOf, creaseSegsOf } from '../dieline/geom.js';
@@ -18,6 +19,8 @@ import { embDirOf } from '../design/emboss.js';
 import { uploadImage, imageFilesOf, readImageFile, imageLayerAt } from '../design/images.js';
 import { useD, dstore, selIdsOf, setSel } from '../design/ui.js';
 import { patchLayers, dupLayers, delLayers, reorder, placeLayer, alignLayers, distributeLayers, flipLayers, alignToEdge, setClipBelow } from '../design/ops.js';
+import { groupLayers, ungroupLayers, patchGroup, toggleCollapsed, setGroupVisible, setGroupLocked, setGroupOpacity, selectGroup, groupOfSelection, dropItem } from '../design/groups.js';
+import { MaskBlock } from './DesignMask.jsx';
 import { DesignCanvas } from './DesignCanvas.jsx';
 import { DesignToolbar } from './DesignToolbar.jsx';
 import { ST, Block, Note, inputSt, selectSt, btnSt, CmField, MmField, ColorRow } from './widgets.jsx';
@@ -178,6 +181,65 @@ export function DesignView() {
   const commitRename = (l, v) => { setRenaming(null); const n = v.trim(); if (n && n !== layerNameOf(l)) patchLayers([l.id], { name: n }); };
   const warnsCount = l => warnsOf(l, creaseSegs, g.sbb).length;
 
+  // Pila visual (arriba = delante): capas sueltas y grupos con sus hijos.
+  const groups = s.groups || [], activeG = groupOfSelection(s, ids), grouped = ids.some(id => (s.layers.find(l => l.id === id) || {}).groupId != null);
+  const items = [], seenG = new Set();
+  s.layers.slice().reverse().forEach(l => {
+    const g = l.groupId != null ? groups.find(x => x.id === l.groupId) : null;
+    if (!g) { items.push({ l }); return; }
+    if (!seenG.has(g.id)) { seenG.add(g.id); items.push({ g, kids: s.layers.filter(x => x.groupId === g.id).reverse() }); }
+  });
+  const doGroup = () => groupLayers(ids, t('Grupo') + ' ' + (groups.length + 1));
+  const dragProps = key => ({
+    draggable: renaming !== key,
+    onDragStart: e => { setDragId(key); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-layer', String(key)); },
+    onDragEnd: () => { setDragId(null); setOver(null); },
+    onDragOver: e => { if (dragId == null) return; e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setOver({ key, above: e.clientY < r.top + r.height / 2 }); },
+    onDrop: e => { if (dragId == null) return; e.preventDefault(); dropItem(dragId, key, over ? over.above : true); setDragId(null); setOver(null); }
+  });
+  const dropShadow = key => over && over.key === key && dragId !== key ? (over.above ? '0 -2px 0 #9a5b1f' : '0 2px 0 #9a5b1f') : 'none';
+  const groupHeader = (g, kids) => {
+    const key = 'G:' + g.id, on = activeG && activeG.id === g.id;
+    return (
+      <div key={key} data-group-id={g.id} onClick={() => selectGroup(g.id)} title={g.name} {...dragProps(key)}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden', padding: '7px 8px', borderRadius: 6, cursor: 'pointer', opacity: dragId === key ? 0.4 : g.visible ? 1 : 0.6, border: '1px solid ' + (on ? '#9a5b1f' : '#d9cdb6'), background: on ? '#f7efe2' : '#f3ece0', boxShadow: dropShadow(key) }}>
+        <Tip label={g.collapsed ? t('Expandir grupo') : t('Contraer grupo')}><span role="button" aria-label={g.collapsed ? t('Expandir grupo') : t('Contraer grupo')} data-group-toggle onClick={e => { e.stopPropagation(); toggleCollapsed(g.id); }} style={{ display: 'flex', flex: 'none', cursor: 'pointer', color: '#5c554a' }}>{g.collapsed ? <IconChevronRight size={14} /> : <IconChevronDown size={14} />}</span></Tip>
+        <Tip label={t('Mostrar / ocultar')}><span role="button" aria-label={t('Mostrar / ocultar')} data-group-eye onClick={e => { e.stopPropagation(); setGroupVisible(g.id, !g.visible); }} style={{ display: 'flex', flex: 'none', cursor: 'pointer', color: g.visible ? '#3d3830' : '#cfc4ab' }}>{g.visible ? <IconEye size={15} /> : <IconEyeOff size={15} />}</span></Tip>
+        <Tip label={t('Bloquear / desbloquear')}><span role="button" aria-label={t('Bloquear / desbloquear')} data-group-lock onClick={e => { e.stopPropagation(); setGroupLocked(g.id, !g.locked); }} style={{ display: 'flex', flex: 'none', cursor: 'pointer', color: g.locked ? '#9a5b1f' : '#cfc4ab' }}>{g.locked ? <IconLock size={14} /> : <IconLockOpen size={14} />}</span></Tip>
+        <IconFolder size={14} style={{ color: '#9a5b1f', flex: 'none' }} />
+        {renaming === key
+          ? <input autoFocus aria-label={t('Nombre del grupo')} defaultValue={g.name} maxLength={32} onClick={e => e.stopPropagation()} onFocus={e => e.target.select()}
+            onBlur={e => { setRenaming(null); const n = e.target.value.trim(); if (n && n !== g.name) patchGroup(g.id, { name: n }); }} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') e.target.blur(); else if (e.key === 'Escape') setRenaming(null); }}
+            style={{ ...inputSt, flex: 1, minWidth: 0, padding: '2px 5px', fontFamily: 'inherit', fontSize: 12 }} />
+          : <span data-group-name={g.name} onDoubleClick={e => { e.stopPropagation(); setRenaming(key); }} style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, color: '#211d18', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.name}</span>}
+        <span style={{ fontFamily: MONO, fontSize: 10, color: '#8a8071', flex: 'none' }}>{kids.length}{g.opacity < 1 ? ' · ' + Math.round(g.opacity * 100) + '%' : ''}</span>
+      </div>
+    );
+  };
+  const layerRow = (l, inGroup) => {
+    const on = ids.includes(l.id), bd = '1px solid ' + (on ? '#9a5b1f' : '#e7e0d4');
+    return (
+      <div key={l.id} data-layer-id={l.id} data-in-group={inGroup ? '1' : undefined} onClick={e => rowClick(e, l)}
+        title={layerNameOf(l)} {...dragProps(l.id)}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden', padding: '7px 8px', marginLeft: inGroup ? 14 : 0, borderRadius: 6, cursor: 'pointer', opacity: dragId === l.id ? 0.4 : l.visible ? 1 : 0.6, borderTop: bd, borderRight: bd, borderBottom: bd, borderLeft: inGroup ? '3px solid #d9b98a' : bd, background: on ? '#f7efe2' : '#fff',
+          boxShadow: dropShadow(l.id) }}>
+        <IconGripVertical size={12} style={{ color: '#cfc4ab', flex: 'none', cursor: 'grab' }} />
+        <Tip label={t('Mostrar / ocultar')}><span role="button" aria-label={t('Mostrar / ocultar')} onClick={e => { e.stopPropagation(); toggleL(l.id, 'visible'); }} style={{ display: 'flex', flex: 'none', cursor: 'pointer', color: l.visible ? '#3d3830' : '#cfc4ab' }}>{l.visible ? <IconEye size={15} /> : <IconEyeOff size={15} />}</span></Tip>
+        <Tip label={t('Bloquear / desbloquear')}><span role="button" aria-label={t('Bloquear / desbloquear')} onClick={e => { e.stopPropagation(); toggleL(l.id, 'locked'); }} style={{ display: 'flex', flex: 'none', cursor: 'pointer', color: l.locked ? '#9a5b1f' : '#cfc4ab' }}>{l.locked ? <IconLock size={14} /> : <IconLockOpen size={14} />}</span></Tip>
+        <span style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 700, color: '#8a8071', border: '1px solid #ded5c4', borderRadius: 3, padding: '1px 4px', flex: 'none' }}>{l.kind === 'text' ? 'T' : l.kind === 'image' ? 'IM' : 'F'}</span>
+        {l.mask && l.mask.url && <Tip label={t('Máscara: clic para pintarla, Mayús+clic para activarla o apagarla')}><img alt={t('Máscara de capa')} src={l.mask.url} data-mask-thumb onClick={e => { e.stopPropagation(); if (e.shiftKey) store.set(st => ({ layers: st.layers.map(x => x.id === l.id ? { ...x, mask: { ...x.mask, on: x.mask.on === false } } : x) })); else { setSel([l.id]); dstore.set({ maskEdit: d.maskEdit === l.id ? null : l.id }); } }} style={{ width: 22, height: 22, objectFit: 'contain', flex: 'none', border: '1px solid ' + (d.maskEdit === l.id ? '#9a5b1f' : '#ded5c4'), borderRadius: 3, background: '#888', opacity: l.mask.on === false ? 0.35 : 1, cursor: 'pointer' }} /></Tip>}
+        {renaming === l.id
+          ? <input autoFocus aria-label={t('Nombre de capa')} defaultValue={layerNameOf(l)} maxLength={32} onClick={e => e.stopPropagation()} onFocus={e => e.target.select()}
+            onBlur={e => commitRename(l, e.target.value)} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') e.target.blur(); else if (e.key === 'Escape') setRenaming(null); }}
+            style={{ ...inputSt, flex: 1, minWidth: 0, padding: '2px 5px', fontFamily: 'inherit', fontSize: 12 }} />
+          : <span data-layer-name={layerNameOf(l)} onDoubleClick={e => { e.stopPropagation(); setRenaming(l.id); }} style={{ flex: 1, minWidth: 0, fontSize: 12, color: '#211d18', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{layerNameOf(l)}</span>}
+        <span style={{ fontSize: 10, color: '#9a5b1f', flex: 'none' }}>{l.finish === 'emboss' ? t('Relieve') + (embDirOf(l, s.embDir) === 'up' ? '↑' : '↓') : (FIN[l.finish] ? t(FIN[l.finish]) : '')}</span>
+        <Tip label={t('Duplicar esta capa')}><span role="button" aria-label={t('Duplicar esta capa')} onClick={e => { e.stopPropagation(); dupLayers([l.id]); }} style={{ display: 'flex', color: '#9a5b1f', cursor: 'pointer', flex: 'none' }}><IconCopy size={14} /></span></Tip>
+        {warnsCount(l) > 0 && <span style={{ width: 7, height: 7, borderRadius: 99, background: '#d05a2a', flex: 'none' }} />}
+      </div>
+    );
+  };
+
   return (<TipProvider>
     <div style={{ width: 256, flex: 'none', background: '#faf7f0', borderRight: '1px solid #ded5c4', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
       <Block>
@@ -198,33 +260,12 @@ export function DesignView() {
           <TBtn icon={IconPalette} tip={t('Documento en blanco con la proporción de la cara; el resultado se inserta como capa de imagen')} disabled={!hero} onClick={openCompose} style={{ fontSize: 11.5 }}>{t('Componer cara')}</TBtn>
         </div>
         <TBtn icon={IconCopy} tip={t('Duplicar la capa seleccionada (⌘D / Ctrl+D)')} onClick={() => dupLayers(ids)} disabled={!ids.length} style={{ width: '100%', marginBottom: 10, padding: '6px 0', fontSize: 11.5, opacity: ids.length ? 1 : 0.4, cursor: ids.length ? 'pointer' : 'default' }}>{t('Duplicar capa / imagen')}</TBtn>
-        <div style={{ display: 'grid', gap: 5 }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(null); }}>
-          {s.layers.slice().reverse().map(l => {
-            const on = ids.includes(l.id), isOver = over && over.id === l.id && dragId !== l.id;
-            return (
-              <div key={l.id} data-layer-id={l.id} onClick={e => rowClick(e, l)}
-                title={layerNameOf(l)} draggable={renaming !== l.id}
-                onDragStart={e => { setDragId(l.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-layer', String(l.id)); }}
-                onDragEnd={() => { setDragId(null); setOver(null); }}
-                onDragOver={e => { if (dragId == null) return; e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setOver({ id: l.id, above: e.clientY < r.top + r.height / 2 }); }}
-                onDrop={e => { if (dragId == null) return; e.preventDefault(); placeLayer(dragId, l.id, over ? over.above : true); setDragId(null); setOver(null); }}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden', padding: '7px 8px', borderRadius: 6, cursor: 'pointer', opacity: dragId === l.id ? 0.4 : l.visible ? 1 : 0.6, border: '1px solid ' + (on ? '#9a5b1f' : '#e7e0d4'), background: on ? '#f7efe2' : '#fff',
-                  boxShadow: isOver ? (over.above ? '0 -2px 0 #9a5b1f' : '0 2px 0 #9a5b1f') : 'none' }}>
-                <IconGripVertical size={12} style={{ color: '#cfc4ab', flex: 'none', cursor: 'grab' }} />
-                <Tip label={t('Mostrar / ocultar')}><span role="button" aria-label={t('Mostrar / ocultar')} onClick={e => { e.stopPropagation(); toggleL(l.id, 'visible'); }} style={{ display: 'flex', flex: 'none', cursor: 'pointer', color: l.visible ? '#3d3830' : '#cfc4ab' }}>{l.visible ? <IconEye size={15} /> : <IconEyeOff size={15} />}</span></Tip>
-                <Tip label={t('Bloquear / desbloquear')}><span role="button" aria-label={t('Bloquear / desbloquear')} onClick={e => { e.stopPropagation(); toggleL(l.id, 'locked'); }} style={{ display: 'flex', flex: 'none', cursor: 'pointer', color: l.locked ? '#9a5b1f' : '#cfc4ab' }}>{l.locked ? <IconLock size={14} /> : <IconLockOpen size={14} />}</span></Tip>
-                <span style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 700, color: '#8a8071', border: '1px solid #ded5c4', borderRadius: 3, padding: '1px 4px', flex: 'none' }}>{l.kind === 'text' ? 'T' : l.kind === 'image' ? 'IM' : 'F'}</span>
-                {renaming === l.id
-                  ? <input autoFocus aria-label={t('Nombre de capa')} defaultValue={layerNameOf(l)} maxLength={32} onClick={e => e.stopPropagation()} onFocus={e => e.target.select()}
-                    onBlur={e => commitRename(l, e.target.value)} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') e.target.blur(); else if (e.key === 'Escape') setRenaming(null); }}
-                    style={{ ...inputSt, flex: 1, minWidth: 0, padding: '2px 5px', fontFamily: 'inherit', fontSize: 12 }} />
-                  : <span data-layer-name={layerNameOf(l)} onDoubleClick={e => { e.stopPropagation(); setRenaming(l.id); }} style={{ flex: 1, minWidth: 0, fontSize: 12, color: '#211d18', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{layerNameOf(l)}</span>}
-                <span style={{ fontSize: 10, color: '#9a5b1f', flex: 'none' }}>{l.finish === 'emboss' ? t('Relieve') + (embDirOf(l, s.embDir) === 'up' ? '↑' : '↓') : (FIN[l.finish] ? t(FIN[l.finish]) : '')}</span>
-                <Tip label={t('Duplicar esta capa')}><span role="button" aria-label={t('Duplicar esta capa')} onClick={e => { e.stopPropagation(); dupLayers([l.id]); }} style={{ display: 'flex', color: '#9a5b1f', cursor: 'pointer', flex: 'none' }}><IconCopy size={14} /></span></Tip>
-                {warnsCount(l) > 0 && <span style={{ width: 7, height: 7, borderRadius: 99, background: '#d05a2a', flex: 'none' }} />}
-              </div>
-            );
-          })}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
+          <TBtn icon={IconFolderPlus} tip={t('Agrupar las capas seleccionadas (Ctrl+G)')} data-testid="group-btn" disabled={!ids.length} onClick={doGroup} style={{ fontSize: 11.5, opacity: ids.length ? 1 : 0.4, cursor: ids.length ? 'pointer' : 'default' }}>{t('Agrupar')}</TBtn>
+          <TBtn icon={IconFolderMinus} tip={t('Desagrupar (Ctrl+Mayús+G)')} data-testid="ungroup-btn" disabled={!grouped} onClick={() => ungroupLayers(ids)} style={{ fontSize: 11.5, opacity: grouped ? 1 : 0.4, cursor: grouped ? 'pointer' : 'default' }}>{t('Desagrupar')}</TBtn>
+        </div>
+        <div style={{ display: 'grid', gap: 5 }} data-testid="layer-list" onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(null); }}>
+          {items.map(it => it.g ? (<React.Fragment key={'G:' + it.g.id}>{groupHeader(it.g, it.kids)}{!it.g.collapsed && it.kids.map(l => layerRow(l, true))}</React.Fragment>) : layerRow(it.l, false))}
         </div>
       </Block>
       <div style={{ padding: 14 }}>
@@ -250,6 +291,22 @@ export function DesignView() {
         {!sel && <div style={{ padding: '20px 14px', fontSize: 12, color: '#8a8071', lineHeight: 1.7 }}>{t('Ninguna capa seleccionada. Haz clic en un elemento del lienzo o en la lista de capas.')}</div>}
       {sel && (<>
         {multi && <div style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: '#9a5b1f', borderBottom: '1px solid #e7e0d4' }}>{t('{n} capas seleccionadas', { n: ids.length })}</div>}
+        {activeG && (
+          <Block>
+            <ST>{t('Grupo')}</ST>
+            <input aria-label={t('Nombre del grupo')} maxLength={32} value={activeG.name} onChange={e => patchGroup(activeG.id, { name: e.target.value })} style={{ ...inputSt, fontFamily: 'inherit', marginBottom: 8 }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+              <Lbl style={{ marginBottom: 0 }}>{t('Opacidad del grupo')}</Lbl>
+              <div style={{ fontFamily: MONO, fontSize: 11, color: '#9a5b1f' }}>{Math.round(activeG.opacity * 100)}%</div>
+            </div>
+            <input type="range" aria-label={t('Opacidad del grupo')} data-testid="group-opacity" min="0" max="100" value={Math.round(activeG.opacity * 100)} onChange={e => setGroupOpacity(activeG.id, clamp(parseFloat(e.target.value) / 100, 0, 1))} style={{ width: '100%', accentColor: '#9a5b1f', margin: '0 0 8px' }} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+              <TBtn icon={activeG.visible ? IconEye : IconEyeOff} tip={t('Mostrar / ocultar')} onClick={() => setGroupVisible(activeG.id, !activeG.visible)} style={{ padding: '6px 0' }} />
+              <TBtn icon={activeG.locked ? IconLock : IconLockOpen} tip={t('Bloquear / desbloquear')} onClick={() => setGroupLocked(activeG.id, !activeG.locked)} style={{ padding: '6px 0' }} />
+              <TBtn icon={IconFolderMinus} tip={t('Desagrupar (Ctrl+Mayús+G)')} onClick={() => ungroupLayers(ids)} style={{ padding: '6px 0' }} />
+            </div>
+          </Block>
+        )}
         <Block>
           <ST>{t('Nombre de capa')}</ST>
           <input aria-label={t('Nombre de capa')} maxLength={32} value={typeof sel.name === 'string' ? sel.name : layerNameOf(sel)} onChange={e => upd({ name: e.target.value })} style={{ ...inputSt, fontFamily: 'inherit' }} />
@@ -382,6 +439,7 @@ export function DesignView() {
             {!sel.imgSrc && <div><Lbl>{t('Origen px')}</Lbl><input type="number" step="100" value={sel.pxw} onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) upd({ pxw: Math.max(50, v) }); }} style={inputSt} /></div>}
           </Block>
         )}
+        {!multi && <MaskBlock sel={sel} facePts={faceP ? faceP.pts : null} t={t} />}
         {!(sel.kind === 'shape' && sel.shape === 'line') && <ShadowBlock sel={sel} updAll={updAll} t={t} />}
         <Block>
           <ST>{t('Acabado')}</ST>

@@ -4,7 +4,9 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { store, useStore } from '../state/store.js';
 import { asset } from '../asset.js';
-import { bboxOf, rotBBox, textMetrics, shapePathD, drawLayer, gradGeom, gradStops, hasShadow } from '../design/layers.js';
+import { bboxOf, rotBBox, textMetrics, shapePathD, drawLayer, gradGeom, gradStops, hasShadow, maskOn } from '../design/layers.js';
+import { groupLayers, ungroupLayers } from '../design/groups.js';
+import { paint, paintAt, paintEnd, syncPaint } from '../design/masks.js';
 import { polyCentroid } from '../design/faces.js';
 import { bboxOfPts, containerAt, containerOfLayer, containerById, heroContainerOf, clipPtsOf } from '../design/containers.js';
 import { dstore, useD, selIdsOf, setSel, setTool } from '../design/ui.js';
@@ -64,6 +66,21 @@ function draftOf(d, p, kind, color, shift, alt) {
   return { ...o, x: Math.min(sx, sx + w), y: Math.min(sy, sy + h), w: Math.abs(w), h: Math.abs(h) };
 }
 
+// Vista previa del pintado de máscara: tinte rojo sobre las zonas ocultas (se redibuja en cada trazo sin pasar por el store).
+function MaskOverlay({ l, k, tx, ty }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const draw = () => {
+      const c = ref.current; if (!c || !syncPaint(l)) return;
+      if (c.width !== paint.tint.width || c.height !== paint.tint.height) { c.width = paint.tint.width; c.height = paint.tint.height; }
+      const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); g.drawImage(paint.tint, 0, 0);
+    };
+    draw(); paint.listeners.add(draw); return () => paint.listeners.delete(draw);
+  });
+  const b = bboxOf(l);
+  return <canvas ref={ref} data-testid="mask-overlay" style={{ position: 'absolute', left: tx + b[0] * k, top: ty + b[1] * k, width: b[2] * k, height: b[3] * k, opacity: 0.5, pointerEvents: 'none', transformOrigin: 'center', transform: 'rotate(' + (l.rot || 0) + 'deg) scale(' + (l.flipX ? -1 : 1) + ',' + (l.flipY ? -1 : 1) + ')' }} />;
+}
+
 export function DesignCanvas({ g, onImageDrop }) {
   const s = useStore();
   const d = useD();
@@ -90,6 +107,7 @@ export function DesignCanvas({ g, onImageDrop }) {
   const ids = selIdsOf(s, d);
   const selLayers = ids.map(id => s.layers.find(l => l.id === id)).filter(l => l && l.visible);
   const single = selLayers.length === 1 ? selLayers[0] : null;
+  const paintOn = !!(single && d.maskEdit === single.id && single.mask && tool === 'move');
   const faceHi = (single && containerOfLayer(g, single)) || containerById(g, d.face), faceC = faceHi ? polyCentroid(faceHi.pts) : null;
   const hasImageDrag = e => Array.from((e.dataTransfer && e.dataTransfer.items) || []).some(it => it.kind === 'file' && /^image\/(png|jpeg|webp)$/i.test(it.type));
 
@@ -131,6 +149,8 @@ export function DesignCanvas({ g, onImageDrop }) {
     ro.observe(el); return () => ro.disconnect();
   }, [g]);
 
+  useEffect(() => { const f = () => store.set({}); window.addEventListener('catbox-mask-ready', f); return () => window.removeEventListener('catbox-mask-ready', f); }, []);
+
   // —— Atajos de teclado ——
   useEffect(() => {
     const kd = e => {
@@ -150,12 +170,13 @@ export function DesignCanvas({ g, onImageDrop }) {
         else if (low === 'x' && sids.length) { e.preventDefault(); copyLayers(sids); delLayers(sids); }
         else if (low === 'v') { if (ds.clip.length) { e.preventDefault(); pasteLayers(); } }
         else if (low === 'd' && sids.length) { e.preventDefault(); dupLayers(sids); }
+        else if (low === 'g' && sids.length) { e.preventDefault(); if (e.shiftKey) ungroupLayers(sids); else groupLayers(sids, t('Grupo') + ' ' + ((st.groups || []).length + 1)); }
         return;
       }
       if (e.altKey) return;
       if (low === 'v') setTool('move'); else if (low === 't') setTool('text'); else if (low === 'h') setTool('hand'); else if (low === 'z') setTool('zoom'); else if (low === 'i') setTool('eyedrop');
       else if (low === 'u') { if (e.shiftKey && ds.tool === 'shape') { const o = ['rect', 'round', 'ellipse', 'triangle', 'polygon', 'star', 'line']; dstore.set({ shape: o[(o.indexOf(ds.shape) + 1) % o.length] }); } else setTool('shape'); }
-      else if (key === 'Escape') { if (ds.tool !== 'move') setTool('move'); else setSel([]); }
+      else if (key === 'Escape') { if (ds.maskEdit != null) dstore.set({ maskEdit: null }); else if (ds.tool !== 'move') setTool('move'); else setSel([]); }
       else if (!sids.length) return;
       else if (key.startsWith('Arrow')) {
         e.preventDefault();
@@ -210,12 +231,20 @@ export function DesignCanvas({ g, onImageDrop }) {
   };
 
   // —— Capas: pulsar = seleccionar (+Shift/Ctrl alterna) y arrastrar para mover ——
+  const startPaint = e => {
+    const br = dstore.get().maskBrush, rev = (br.mode === 'reveal') !== e.altKey;
+    userMoved.current = true;
+    try { elRef.current.setPointerCapture(e.pointerId); } catch (_) { /* sin captura */ }
+    drag.current = { type: 'paint', id: single.id, rev };
+    paintAt(single, mmPt(e), br, rev, true);
+  };
   const onLayerDown = (e, l) => {
     if (e.button !== 0 || tool !== 'move') return;
     e.stopPropagation(); userMoved.current = true;
+    if (paintOn && e.button === 0) { startPaint(e); return; }
     let cs = ids;
     if (e.shiftKey || e.ctrlKey || e.metaKey) { cs = ids.includes(l.id) ? ids.filter(x => x !== l.id) : ids.concat([l.id]); setSel(cs); if (!cs.includes(l.id)) return; }
-    else if (!ids.includes(l.id)) { cs = [l.id]; setSel(cs); }
+    else if (!ids.includes(l.id)) { cs = l.groupId != null ? store.get().layers.filter(x => x.groupId === l.groupId && x.visible).map(x => x.id) : [l.id]; setSel(cs); } // un grupo se selecciona entero (Ctrl/Mayús+clic o la lista: capa suelta)
     const movers = s.layers.filter(x => cs.includes(x.id) && !x.locked);
     if (!movers.length) return;
     try { elRef.current.setPointerCapture(e.pointerId); } catch (_) { /* sin captura */ }
@@ -252,6 +281,7 @@ export function DesignCanvas({ g, onImageDrop }) {
     if (e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     const p = mmPt(e), dc = dstore.get();
+    if (paintOn) { startPaint(e); return; }
     if (tool === 'hand') { drag.current = { type: 'pan', x: e.clientX, y: e.clientY, tx: s.tx, ty: s.ty }; return; }
     if (tool === 'zoom') { const r = elRef.current.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.altKey ? 1 / 1.6 : 1.6); return; }
     if (tool === 'eyedrop') { pickColor(p); drag.current = { type: 'none' }; return; }
@@ -284,9 +314,10 @@ export function DesignCanvas({ g, onImageDrop }) {
   };
 
   const onPointerMove = e => {
-    if (rulers || tool === 'text' || tool === 'shape') { const p = mmPt(e); setCur(p); lastPt.current = p; } else lastPt.current = mmPt(e);
+    if (rulers || tool === 'text' || tool === 'shape' || paintOn) { const p = mmPt(e); setCur(p); lastPt.current = p; } else lastPt.current = mmPt(e);
     const dd = drag.current; if (!dd) return;
     const kk = store.get().k;
+    if (dd.type === 'paint') { const pl = store.get().layers.find(x => x.id === dd.id); if (pl) paintAt(pl, mmPt(e), dstore.get().maskBrush, dd.rev, false); return; }
     if (dd.type === 'guide') {
       const p = mmPt(e), v = r1(dd.axis === 'v' ? p[0] : p[1]);
       setGuides(gs => gs.map((q, i) => i === dd.index ? { ...q, pos: v } : q));
@@ -413,6 +444,7 @@ export function DesignCanvas({ g, onImageDrop }) {
 
   const onPointerUp = e => {
     const dd = drag.current;
+    if (dd && dd.type === 'paint') paintEnd(dd.id);
     if (dd && dd.type === 'move' && dd.moved) { // soltar una capa con el centro en otra cara = pasa a esa cara
       const gg = gRef.current;
       store.set(st => ({ layers: st.layers.map(l => {
@@ -474,7 +506,7 @@ export function DesignCanvas({ g, onImageDrop }) {
     else if (l.grad && l.kind !== 'image' && !isDraft) fill = 'url(#gr-' + l.id + ')';
     const cx = b[0] + b[2] / 2, cy = b[1] + b[3] / 2;
     const tf = (l.rot ? 'rotate(' + l.rot + ' ' + cx + ' ' + cy + ')' : '') + (l.flipX || l.flipY ? ' translate(' + cx + ' ' + cy + ') scale(' + (l.flipX ? -1 : 1) + ' ' + (l.flipY ? -1 : 1) + ') translate(' + (-cx) + ' ' + (-cy) + ')' : '');
-    const op = l.opacity == null ? 1 : l.opacity;
+    const op = (l.opacity == null ? 1 : l.opacity) * (l.gOp == null ? 1 : l.gOp);
     const down = isDraft ? undefined : e => onLayerDown(e, l);
     const curs = tool === 'move' ? (l.locked ? 'default' : 'move') : undefined;
     const els = [];
@@ -520,7 +552,7 @@ export function DesignCanvas({ g, onImageDrop }) {
     const clipId = panel ? 'design-panel-' + String(panel.panelId).replace(/[^a-zA-Z0-9_-]/g, '-') : '';
     return (
       <g key={isDraft ? 'draft' : l.id} clipPath={clipId ? 'url(#' + clipId + ')' : undefined} filter={!isDraft && hasShadow(l) ? 'url(#sh-' + l.id + ')' : undefined} style={l.blend && l.blend !== 'normal' ? { mixBlendMode: l.blend } : undefined}>
-        <g clipPath={l.clipMask && !isDraft ? 'url(#cm-' + l.id + ')' : undefined}><g transform={tf || undefined} opacity={op}>{els}</g></g>
+        <g clipPath={l.clipMask && !isDraft ? 'url(#cm-' + l.id + ')' : undefined} mask={maskOn(l) && !isDraft ? 'url(#mk-' + l.id + ')' : undefined}><g transform={tf || undefined} opacity={op}>{els}</g></g>
         {l.finish === 'uv' && <rect x={b[0] - 1} y={b[1] - 1} width={b[2] + 2} height={b[3] + 2} fill="none" stroke="#5a9bc4" strokeWidth={1} strokeDasharray="4 3" style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} transform={tf || undefined} />}
         {l.finish === 'gloss' && <rect x={b[0] - 1} y={b[1] - 1} width={b[2] + 2} height={b[3] + 2} fill="none" stroke="#28a7a1" strokeWidth={1} strokeDasharray="7 2 1 2" style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} transform={tf || undefined} />}
       </g>
@@ -617,6 +649,7 @@ export function DesignCanvas({ g, onImageDrop }) {
               out.push(<filter key={'sh' + l.id} id={'sh-' + l.id} filterUnits="userSpaceOnUse" x={rb[0] - pad} y={rb[1] - pad} width={rb[2] + 2 * pad} height={rb[3] + 2 * pad} colorInterpolationFilters="sRGB"><feDropShadow dx={sh.x || 0} dy={sh.y || 0} stdDeviation={(sh.blur || 0) / 2} floodColor={sh.color || '#000000'} floodOpacity={sh.opacity == null ? 0.4 : sh.opacity} /></filter>);
             }
             if (l.clipMask) { const cm = l.clipMask; out.push(<clipPath key={'cm' + l.id} id={'cm-' + l.id} clipPathUnits="userSpaceOnUse"><path d={shapePathD(cm)} transform={rfTf(cm.rot, cm.flipX, cm.flipY, cm.x + cm.w / 2, cm.y + cm.h / 2) || undefined} /></clipPath>); }
+            if (maskOn(l)) { const bm = bboxOf(l), rb = rotBBox(l); out.push(<mask key={'mk' + l.id} id={'mk-' + l.id} maskUnits="userSpaceOnUse" x={rb[0] - 1} y={rb[1] - 1} width={rb[2] + 2} height={rb[3] + 2}><g transform={rfTf(l.rot, l.flipX, l.flipY, bm[0] + bm[2] / 2, bm[1] + bm[3] / 2) || undefined}><image href={l.mask.url} x={bm[0]} y={bm[1]} width={bm[2]} height={bm[3]} preserveAspectRatio="none" /></g></mask>); }
             return out;
           })}
           {(g.panels || []).map(panel => {
@@ -640,6 +673,7 @@ export function DesignCanvas({ g, onImageDrop }) {
             </g>
           )}
           {renderSelOverlay()}
+          {paintOn && cur && <circle data-testid="mask-brush" cx={cur[0]} cy={cur[1]} r={d.maskBrush.size / 2} fill="none" stroke={d.maskBrush.mode === 'reveal' ? '#2a8a4a' : '#c0392b'} strokeWidth={1.2} style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />}
           {marquee && <rect x={Math.min(marquee[0], marquee[2])} y={Math.min(marquee[1], marquee[3])} width={Math.abs(marquee[2] - marquee[0])} height={Math.abs(marquee[3] - marquee[1])} fill="rgba(154,91,31,0.08)" stroke="#9a5b1f" strokeWidth={1} strokeDasharray="4 3" style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />}
           {grid && (() => {
             const st = tickStep(k), x0 = Math.floor((-s.tx / k) / st) * st, x1 = (size.w - s.tx) / k, y0 = Math.floor((-s.ty / k) / st) * st, y1 = (size.h - s.ty) / k, ls = [];
@@ -656,6 +690,7 @@ export function DesignCanvas({ g, onImageDrop }) {
         </g>
       </svg>
       {renderEditor()}
+      {paintOn && <MaskOverlay l={single} k={k} tx={s.tx} ty={s.ty} />}
       {rulers && size.w > 0 && <Rulers k={k} tx={s.tx} ty={s.ty} w={size.w} h={size.h} cur={cur} onNew={newGuide} />}
       {hud && <div style={{ position: 'absolute', left: '50%', top: 28, transform: 'translateX(-50%)', padding: '5px 11px', borderRadius: 6, background: '#211d18', color: '#fff', fontSize: 12, fontFamily: MONO, pointerEvents: 'none' }}>{hud}</div>}
       {dropPanel && <div data-testid="image-drop-hint" style={{ position: 'absolute', left: '50%', top: 18, transform: 'translateX(-50%)', padding: '7px 12px', borderRadius: 6, background: '#211d18', color: '#fff', fontSize: 12, fontWeight: 700, boxShadow: '0 6px 18px rgba(33,29,24,0.22)', pointerEvents: 'none' }}>{t('Suelta la imagen en esta cara')}</div>}

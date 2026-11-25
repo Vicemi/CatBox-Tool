@@ -4,6 +4,7 @@ import { dstore, setSel } from './ui.js';
 import { bboxOf, rotBBox, clipMaskOf } from './layers.js';
 import { polyCentroid, edgeRotation } from './faces.js';
 import { bboxOfPts, containerOfLayer, containerAt } from './containers.js';
+import { compactGroups } from './groups.js';
 
 export const mapLayers = (ids, fn) => store.set(st => ({ layers: st.layers.map(l => ids.includes(l.id) ? { ...fn(l), heroPreset: undefined } : l) }));
 export const patchLayers = (ids, patch) => mapLayers(ids, l => ({ ...l, ...patch }));
@@ -13,11 +14,11 @@ export const flipLayers = (ids, axis) => mapLayers(ids, l => ({ ...l, [axis === 
 const addClones = (src, off) => {
   const st = store.get();
   const added = src.map((l, i) => ({ ...l, id: st.seq + i, x: l.x + off, y: l.y + off, locked: false, visible: true, heroPreset: undefined }));
-  store.set({ layers: st.layers.concat(added), seq: st.seq + added.length });
+  store.set({ layers: compactGroups(st.layers.concat(added)), seq: st.seq + added.length });
   setSel(added.map(l => l.id));
 };
 export const dupLayers = (ids, off = 2) => { const src = store.get().layers.filter(l => ids.includes(l.id)); if (src.length) addClones(src, off); };
-export const delLayers = ids => { if (!ids.length) return; store.set(st => ({ layers: st.layers.filter(l => !ids.includes(l.id)) })); setSel([]); };
+export const delLayers = ids => { if (!ids.length) return; store.set(st => { const ls = st.layers.filter(l => !ids.includes(l.id)); return { layers: ls, groups: (st.groups || []).filter(g => ls.some(l => l.groupId === g.id)) }; }); setSel([]); };
 export const copyLayers = ids => { const src = store.get().layers.filter(l => ids.includes(l.id)); if (src.length) dstore.set({ clip: src.map(l => ({ ...l })), pasteN: 0 }); };
 export function pasteLayers() {
   const d = dstore.get(); if (!d.clip.length) return;
@@ -35,7 +36,7 @@ export function reorder(ids, how) {
     else if (how === 'back') ls = sel.concat(ls.filter(l => !on(l)));
     else if (how === 'up') { for (let i = ls.length - 2; i >= 0; i--) if (on(ls[i]) && !on(ls[i + 1])) [ls[i], ls[i + 1]] = [ls[i + 1], ls[i]]; }
     else { for (let i = 1; i < ls.length; i++) if (on(ls[i]) && !on(ls[i - 1])) [ls[i], ls[i - 1]] = [ls[i - 1], ls[i]]; }
-    return { layers: ls };
+    return { layers: compactGroups(ls) };
   });
 }
 // Arrastrar en la lista: coloca `id` justo encima (above) o debajo de `targetId` en la pila visual.

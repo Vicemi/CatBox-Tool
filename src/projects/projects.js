@@ -4,6 +4,7 @@ import { normalizeMaterial, materialToStorePatch } from '../render3d/materialPre
 import { defaultCustom, normalizeCustom } from '../dieline/custom.js';
 import { asset } from '../asset.js';
 import { saveFile } from '../platform.js';
+import { preloadMasks } from '../design/layers.js';
 
 export const PROJECT_SCHEMA = 'box3d-project';
 export const PROJECT_VERSION = 1;
@@ -33,7 +34,7 @@ export function makeProject(state, meta = {}) {
         : (typeof meta.thumbnail === 'string' ? meta.thumbnail : '')
     },
     box: copyFields(state, BOX_FIELDS),
-    design: { layers: state.layers.map(cleanLayer), seq: state.seq },
+    design: { layers: state.layers.map(cleanLayer), seq: state.seq, groups: structuredClone(state.groups || []) },
     appearance: {
       material: normalizeMaterial(state),
       fx: structuredClone(state.fx),
@@ -66,11 +67,13 @@ export async function projectStateOf(raw, view = 'design') {
     const img = await imageOf(clean.imgSrc);
     return img ? { ...clean, img } : clean;
   }));
+  await preloadMasks(layers); // las máscaras deben estar decodificadas antes del primer dibujo/horneado
   return {
     ...copyFields(doc.box, BOX_FIELDS),
     custom: doc.box.custom ? normalizeCustom(doc.box.custom) : defaultCustom(),
     wrap: doc.box.wrap ? structuredClone(doc.box.wrap) : { flap: 0, outer: 0, inner: 0, tab: 12, slot: 20, slotW: 1.2, sideTab: 0 },
     layers,
+    groups: Array.isArray(doc.design.groups) ? structuredClone(doc.design.groups) : [],
     seq: doc.design.seq,
     ...materialToStorePatch(doc.appearance && doc.appearance.material),
     fx: doc.appearance && doc.appearance.fx ? structuredClone(doc.appearance.fx) : undefined,

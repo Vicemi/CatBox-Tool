@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from 'react';
 import { store } from '../state/store.js';
 
-let ds = { tool: 'move', shape: 'rect', sels: [], primary: null, face: null, color: null, clip: [], pasteN: 0, space: false };
+let ds = { tool: 'move', shape: 'rect', sels: [], primary: null, face: null, color: null, clip: [], pasteN: 0, space: false, maskEdit: null, maskBrush: { size: 8, hard: 0.6, mode: 'hide' } };
 const ls = new Set();
 export const dstore = {
   get: () => ds,

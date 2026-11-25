@@ -40,7 +40,7 @@ const initial = {
   xray: false,
   entorno3d: '',     // id del entorno 3D elegido (solo para resaltar la tarjeta)
   panelOpen3d: {},   //apertura manual por cara en 3D: {panelId: 0..100}
-  sel: null, seq: 1,
+  sel: null, seq: 1, groups: [], // grupos de capas: [{id, name, collapsed, visible, locked, opacity}]; cada capa lleva groupId
   layers: [] // 默认不带预设图层，设计页从空白开始（?heroTest/?embTest/?surfaceTest 调试场景仍注入测试图层）
 };
 
@@ -94,9 +94,9 @@ const cloneInitial = () => structuredClone(initial);
 const HIST_MAX = 60, HIST_GAP = 400;
 let histPast = [], histFuture = [], histLast = 0;
 // Historial: capas + estructura (caja propia, medidas, material). Todo se actualiza de forma inmutable → instantáneas sin copia.
-const HIST_KEYS = ['layers', 'seq', 'custom', 'L', 'W', 'H', 'wrap', 'matId', 'bleed', 'glue', 'tpl'];
+const HIST_KEYS = ['layers', 'groups', 'seq', 'custom', 'L', 'W', 'H', 'wrap', 'matId', 'bleed', 'glue', 'tpl'];
 const frame = () => Object.fromEntries(HIST_KEYS.map(k => [k, state[k]]));
-const tracked = p => ['layers', 'custom', 'L', 'W', 'H', 'wrap', 'matId', 'bleed', 'glue', 'tpl'].some(k => Object.prototype.hasOwnProperty.call(p, k) && p[k] !== state[k]);
+const tracked = p => ['layers', 'groups', 'custom', 'L', 'W', 'H', 'wrap', 'matId', 'bleed', 'glue', 'tpl'].some(k => Object.prototype.hasOwnProperty.call(p, k) && p[k] !== state[k]);
 
 export const store = {
   get: () => state,
