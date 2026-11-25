@@ -13,7 +13,7 @@ export function geomOf(s, t) {
   const o = { segs: [], fills: [], panels: [], safes: [], labels: [], dims: [], arcRuns: [], slots: [], sbb: [1e9, 1e9, -1e9, -1e9], vbb: [1e9, 1e9, -1e9, -1e9] };
   const tr = (pts, bb) => { for (const p of pts) { if (p[0] < bb[0]) bb[0] = p[0]; if (p[1] < bb[1]) bb[1] = p[1]; if (p[0] > bb[2]) bb[2] = p[0]; if (p[1] > bb[3]) bb[3] = p[1]; } };
   const cut = pts => { tr(pts, o.sbb); tr(pts, o.vbb); o.segs.push({ t: 'cut', pts }); };
-  const crease = pts => { tr(pts, o.sbb); tr(pts, o.vbb); o.segs.push({ t: 'crease', pts }); };
+  const crease = (pts, meta) => { tr(pts, o.sbb); tr(pts, o.vbb); o.segs.push(meta ? { t: 'crease', pts, ...meta } : { t: 'crease', pts }); };
   // Punteado / perforación: corte intermitente (capa PUNTEADO en láser y DXF).
   const perf = pts => { tr(pts, o.sbb); tr(pts, o.vbb); o.segs.push({ t: 'perf', pts }); };
   const fill = pts => { tr(pts, o.sbb); tr(pts, o.vbb); o.fills.push(pts); };

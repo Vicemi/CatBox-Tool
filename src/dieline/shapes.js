@@ -59,9 +59,62 @@ function chamferRect(w, h, cbl, cbr, ctr, ctl) {
  * @param {{corner?:number, hinge?:boolean, arch?:number}} opt
  */
 export function shapePoints(kind, w, h, opt = {}) {
+  if (kind === 'poly' && Array.isArray(opt.pts) && opt.pts.length >= 3 && (opt.R || opt.B)) return polyOutline(opt.pts, opt).pts;
   const pts = mitred(baseShape(kind, w, h, opt), w, opt);
   // Esquinas libres redondeadas por lado (rL a la izquierda de la bisagra, rR a la derecha); la bisagra no se toca.
   return (opt.rL > 0 || opt.rR > 0) ? filletCorners(pts, w, opt.rL || 0, opt.rR || 0, !!opt.hinge) : pts;
+}
+
+/**
+ * Contorno de una cara de forma libre con radio por vértice (opt.R[i]) y curva por lado (opt.B[i] = flecha en mm,
+ * + hacia fuera, − hacia dentro). Devuelve { pts, seg } donde seg[k] es el lado lógico (índice de opt.pts) del tramo
+ * que empieza en pts[k]: así los tipos de línea y las uniones siguen al lado aunque se muestree en curva.
+ * En una hija (opt.hinge) la bisagra (y = 0) no se curva ni se redondea; opt.lockV = vértices que no se redondean.
+ */
+export function polyOutline(P, opt = {}) {
+  const n = P.length, R = opt.R || [], B = opt.B || [], lock = opt.lockV || new Set();
+  let area = 0; for (let i = 0; i < n; i++) { const q = P[(i + 1) % n]; area += P[i][0] * q[1] - q[0] * P[i][1]; }
+  const isHinge = i => opt.hinge && Math.abs(P[i][1]) < 1e-6 && Math.abs(P[(i + 1) % n][1]) < 1e-6;
+  const bulge = i => (isHinge(i) ? 0 : +B[i] || 0);
+  // Esquinas: [punto de entrada, ...arco, punto de salida] (o el vértice solo).
+  const corner = P.map((p, i) => {
+    const r = +R[i] || 0, a = P[(i - 1 + n) % n], b = P[(i + 1) % n];
+    const onHinge = opt.hinge && Math.abs(p[1]) < 1e-6;
+    if (r <= 0 || onHinge || lock.has(i) || bulge((i - 1 + n) % n) || bulge(i)) return [p];
+    const u1 = [a[0] - p[0], a[1] - p[1]], u2 = [b[0] - p[0], b[1] - p[1]], l1 = Math.hypot(...u1), l2 = Math.hypot(...u2);
+    const cross = u1[0] * u2[1] - u1[1] * u2[0];
+    if (l1 < 1e-6 || l2 < 1e-6 || Math.abs(cross) < 1e-9) return [p];
+    const ang = Math.acos(Math.max(-1, Math.min(1, (u1[0] * u2[0] + u1[1] * u2[1]) / (l1 * l2))));
+    const d = Math.min(r / Math.tan(ang / 2), l1 * 0.49, l2 * 0.49), rr = d * Math.tan(ang / 2);
+    const t1 = [p[0] + u1[0] / l1 * d, p[1] + u1[1] / l1 * d], t2 = [p[0] + u2[0] / l2 * d, p[1] + u2[1] / l2 * d];
+    const bis = [u1[0] / l1 + u2[0] / l2, u1[1] / l1 + u2[1] / l2], bl = Math.hypot(...bis) || 1;
+    const c = [p[0] + bis[0] / bl * rr / Math.sin(ang / 2), p[1] + bis[1] / bl * rr / Math.sin(ang / 2)];
+    const a0 = Math.atan2(t1[1] - c[1], t1[0] - c[0]);
+    let da = Math.atan2(t2[1] - c[1], t2[0] - c[0]) - a0; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
+    const N = Math.max(4, Math.min(16, Math.round(rr)));
+    return Array.from({ length: N + 1 }, (_, k) => [c[0] + rr * Math.cos(a0 + da * k / N), c[1] + rr * Math.sin(a0 + da * k / N)]);
+  });
+  const pts = [], seg = [];
+  for (let i = 0; i < n; i++) {
+    const cIn = corner[i], s0 = cIn[cIn.length - 1], s1 = corner[(i + 1) % n][0];
+    // El arco de la esquina pertenece al lado que sale de ella.
+    for (let k = 0; k < cIn.length; k++) { pts.push(cIn[k]); seg.push(i); }
+    const s = bulge(i);
+    if (s) {
+      const dx = s1[0] - s0[0], dy = s1[1] - s0[1], chord = Math.hypot(dx, dy);
+      if (chord > 1e-6) {
+        const nx = (area >= 0 ? dy : -dy) / chord, ny = (area >= 0 ? -dx : dx) / chord; // normal hacia fuera
+        const sag = Math.max(-chord * 2, Math.min(chord * 2, s)), N = Math.max(8, Math.min(48, Math.round(chord / 2)));
+        // Curva suave por s0 y s1 con flecha `sag` en el centro: parábola para curvas suaves, seno para muy abombadas.
+        for (let k = 1; k < N; k++) {
+          const t = k / N;
+          const f = Math.abs(sag) < chord * 0.3 ? 4 * t * (1 - t) : Math.sin(Math.PI * t);
+          pts.push([s0[0] + dx * t + nx * sag * f, s0[1] + dy * t + ny * sag * f]); seg.push(i);
+        }
+      }
+    }
+  }
+  return { pts, seg };
 }
 
 // Redondea cada vértice convexo con el radio de su mitad (izquierda/derecha); en hijas se respetan los vértices de bisagra (y = 0).

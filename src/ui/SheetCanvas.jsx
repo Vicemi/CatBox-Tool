@@ -55,7 +55,7 @@ const segDist = (p, a, b) => {
   return Math.hypot(p[0] - a[0] - u * dx, p[1] - a[1] - u * dy);
 };
 //  · vertexEdit {pts (mundo), fixed[], onMove(i, pt), onInsert(i, pt), onDelete(i)} — forma libre: vértices editables
-export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanelClick, extraLines, onLineDrag, selLineId, panelShiftInfo, onPanelShift, selFrame, onPanelResize, edgeTargets, armedShape, onEdgePick, onShapeDrop, vertexEdit }) {
+export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanelClick, extraLines, onLineDrag, selLineId, panelShiftInfo, onPanelShift, selFrame, onPanelResize, edgeTargets, armedShape, onEdgePick, onShapeDrop, vertexEdit, sideHighlight }) {
   const s = useStore();
   const t = useT();
   const elRef = useRef(null);
@@ -359,6 +359,7 @@ export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanel
     const els = [];
     g.segs.forEach((sg, si) => {
       const dstr = 'M' + sg.pts.map(p => p[0] + ' ' + p[1]).join('L');
+      if (sg.t === 'none') els.push(<path key={'none' + si} d={dstr} fill="none" stroke="#a59a85" strokeWidth={1} strokeDasharray="1 3" style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />); // quitada: se ve tenue para poder recuperarla
       if (s.selSeg === si) els.push(<path key={'sel' + si} d={dstr} fill="none" stroke="#1c6ee0" strokeWidth={3} style={{ vectorEffect: 'non-scaling-stroke' }} />);
       els.push(<path key={'hit' + si} d={dstr} fill="none" stroke="rgba(0,0,0,0.001)" strokeWidth={9 / k} style={{ cursor: 'pointer' }} onClick={e => { e.stopPropagation(); store.set({ selSeg: si }); }} />);
     });
@@ -478,6 +479,17 @@ export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanel
             <path d={g.creasePath} fill="none" stroke="#2E7D46" strokeWidth={1.5} style={{ vectorEffect: 'non-scaling-stroke' }} />
             <path d={g.cutPath} fill="none" stroke="#C8102E" strokeWidth={1.6} style={{ vectorEffect: 'non-scaling-stroke' }} />
             {g.perfPath && <path d={g.perfPath} fill="none" stroke="#C8102E" strokeWidth={1.6} strokeDasharray="5 3" style={{ vectorEffect: 'non-scaling-stroke' }} />}
+            {sideHighlight && <line x1={sideHighlight[0][0]} y1={sideHighlight[0][1]} x2={sideHighlight[1][0]} y2={sideHighlight[1][1]} stroke="#1c6ee0" strokeWidth={6} strokeOpacity={0.45} strokeLinecap="round" style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />}
+            {g.segs.filter(sg => sg.fold).map((sg, i) => {
+              // Marca de plegado en cada bisagra: V = valle (como el resto de la pieza), M = monte (al revés) y el ángulo.
+              const a = sg.pts[0], b = sg.pts[sg.pts.length - 1], mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, txt = sg.fold + ' ' + Math.round(sg.angle) + '°';
+              return (
+                <g key={'fold' + i} style={{ pointerEvents: 'none' }}>
+                  <rect x={mx - 13 / k} y={my - 5.5 / k} width={26 / k} height={11 / k} rx={3 / k} fill={sg.fold === 'M' ? '#7a3fb0' : '#2E7D46'} opacity={0.9} />
+                  <text x={mx} y={my + 3.2 / k} fontSize={8.5 / k} textAnchor="middle" fill="#fff" fontWeight={700} style={{ fontFamily: "'JetBrains Mono',monospace", userSelect: 'none' }}>{txt}</text>
+                </g>
+              );
+            })}
             {(armedShape || shapeDrag) && (edgeTargets || []).map(tg => (
               <line key={'et' + tg.key} x1={tg.a[0]} y1={tg.a[1]} x2={tg.b[0]} y2={tg.b[1]} stroke="#28a7a1" strokeOpacity={0.55} strokeWidth={4} strokeDasharray="6 4" style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />
             ))}

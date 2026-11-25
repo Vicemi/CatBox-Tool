@@ -1,7 +1,7 @@
 // Self-check for flap profiles, free-form faces and cut-outs.
 // Run: node scripts/check-builder-shapes.mjs
 import assert from 'node:assert/strict';
-import { startFromShape, attachShape, panelEdgeList, customLayout, mapLocal, normalizeCustom, toFreeForm, editVertex, addNetLine, updateNetPanel, cutoutLocal, customPieces } from '../src/dieline/custom.js';
+import { startFromShape, attachShape, panelEdgeList, customLayout, mapLocal, normalizeCustom, toFreeForm, editVertex, addNetLine, updateNetPanel, cutoutLocal, customPieces, panelSideList, setEdgeBulge, setVertexRadius, setEdgeType } from '../src/dieline/custom.js';
 import { geomOf } from '../src/dieline/geom.js';
 
 const T = 0.42;
@@ -86,4 +86,34 @@ for (const shape of ['asym', 'halfdisc', 'quarter', 'round', 'tuck']) {
   const spec = root && (root.root || root);
   assert.ok(JSON.stringify(pieces).includes('"holes"'), '3D spec carries the holes');
 }
-console.log('ok builder shapes: profiles, asymmetric, rounded, free-form, holes');
+// 6. Everything editable: curved side, rounded single corner, per-side line type (incl. no line), hinge type.
+{
+  let c = startFromShape(null, st, 'square');
+  c = attachShape(c, st, 'p1', 'far', 'flap');
+  const fid = c.panels[1].id;
+  c = toFreeForm(c, fid, 90);
+  const sides = panelSideList(c.panels[1]);
+  const outer = sides.find(s => Math.abs(s.a[1] - s.b[1]) < 1e-6 && s.a[1] > 1); // top side of the flap
+  assert.ok(outer, 'flap top side listed');
+  c = setEdgeBulge(c, fid, outer.i, 8);                 // curved top
+  c = setVertexRadius(c, fid, outer.i, 4);              // one rounded corner only
+  let g = geom(c), lay = customLayout({ ...st, custom: c }, T), n = lay.byId.get(fid);
+  assert.ok(Math.max(...n.shapePts.map(q => q[1])) > 15 + 7.5, 'top side bulges outward by ~8 mm');
+  // Per-side types: turn the left side into a crease, the right side into no line.
+  const [left, right] = panelSideList(c.panels[1]).filter(s => s.i !== outer.i); // the two mitred ends
+  const cutsBefore = g.cutN;
+  c = setEdgeType(c, fid, left.key, 'crease'); c = setEdgeType(c, fid, right.key, 'none');
+  g = geom(c);
+  assert.ok(g.cutN < cutsBefore, 'fewer cut segments after retyping sides');
+  // Hinge type: perforation instead of crease.
+  const creaseBefore = g.segs.filter(s => s.t === 'crease').length;
+  c = setEdgeType(c, fid, 'hinge', 'perf');
+  g = geom(c);
+  assert.equal(g.segs.filter(s => s.t === 'crease').length, creaseBefore - 1, 'hinge no longer a crease');
+  assert.ok(g.segs.some(s => s.t === 'perf'), 'hinge drawn as perforation');
+  // Fold markers carry direction and angle.
+  const c2 = updateNetPanel(attachShape(startFromShape(null, st, 'square'), st, 'p1', 'far', 'flap'), 'p2', { sign: 1, angle: 135 });
+  const hinge = geom(c2).segs.find(s => s.t === 'crease' && s.panelId === 'p2');
+  assert.ok(hinge && hinge.fold === 'M' && hinge.angle === 135, 'mountain fold at 135° marked on the hinge');
+}
+console.log('ok builder shapes: profiles, asymmetric, rounded, free-form, holes, curves, line types, fold marks');

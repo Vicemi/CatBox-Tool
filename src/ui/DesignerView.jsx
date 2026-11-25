@@ -17,7 +17,8 @@ import {
   toNetCustom, templateToNet, applyNetPreset, NET_PRESETS, EDGE_OPTIONS, LOCK_TYPES,
   addNetPanel, updateNetPanel, deleteNetPanel, duplicateNetPanel, edgeFree, addLock,
   mapLocal, addNetLine, updateNetLine, deleteNetLine, wrapCustom,
-  panelEdgeList, BUILDER_SHAPES, attachShape, startFromShape, toFreeForm, editVertex
+  panelEdgeList, BUILDER_SHAPES, attachShape, startFromShape, toFreeForm, editVertex,
+  panelSideList, setEdgeType, setEdgeBulge, setVertexRadius
 } from '../dieline/custom.js';
 import { SHAPE_OPTIONS, FLAP_SHAPES, shapePath, shapePoints } from '../dieline/shapes.js';
 import { preflightOf, LEVEL_DOT } from '../dieline/checks.js';
@@ -34,6 +35,7 @@ import { ask, notify, notifyError } from './dialogs.jsx';
 
 const EDGE_ICON = { far: IconArrowBarUp, near: IconArrowBarDown, xmin: IconArrowBarLeft, xmax: IconArrowBarRight };
 const lbl = { fontSize: 10.5, color: '#8a8071', marginBottom: 3 };
+const LINE_OPTS = [{ id: 'cut', name: 'Corte' }, { id: 'crease', name: 'Pliegue' }, { id: 'perf', name: 'Punteado' }, { id: 'none', name: 'Sin línea' }];
 const hint = { fontSize: 10.5, color: '#a59a85', lineHeight: 1.55 };
 
 // Botón de icono con tooltip (paleta de herramientas de la cara).
@@ -127,6 +129,7 @@ export function DesignerView() {
   const [selLine, setSelLine] = useState(null);
   const [armed, setArmed] = useState(null);        // forma de la paleta armada como herramienta (clic en un borde)
   const [palShape, setPalShape] = useState('flap'); // forma que ponen los botones «+»
+  const [hoverSide, setHoverSide] = useState(null);  // lado resaltado en el plano desde la lista «Bordes»
   const [step, setStep] = useState(1);
   const [lockType, setLockType] = useState('slot');
   const [lockLen, setLockLen] = useState(0);
@@ -787,7 +790,8 @@ export function DesignerView() {
       armedShape={isNet ? armed : null}
       onEdgePick={isNet ? (tg => attachAt(tg, armed || palShape)) : undefined}
       onShapeDrop={isNet ? dropShape : undefined}
-      vertexEdit={vertexEdit} />
+      vertexEdit={vertexEdit}
+      sideHighlight={hoverSide && netPanelNode ? [mapLocal(netPanelNode, ...hoverSide.a), mapLocal(netPanelNode, ...hoverSide.b)] : null} />
 
     <div style={{ width: 344, flex: 'none', background: '#faf7f0', borderLeft: '1px solid #ded5c4', overflowY: 'auto' }}>
       <Block style={{ padding: 12 }}>
@@ -936,11 +940,32 @@ export function DesignerView() {
                 </select>
               </div>
               <div>
-                <div style={lbl}>{t('Ángulo de plegado °')}</div>
-                <input type="number" min="0" max="360" step="1" value={netPanel.angle} onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) setPanel({ angle: Math.min(360, Math.max(0, v)) }); }} style={inputSt} />
+                <div style={lbl}>{t('Línea de la bisagra')}</div>
+                <select value={netPanel.hingeType || 'crease'} onChange={e => patchCustom(cc => setEdgeType(cc, netPanel.id, 'hinge', e.target.value))} style={selectSt}>
+                  {LINE_OPTS.map(o => <option key={o.id} value={o.id}>{t(o.name)}</option>)}
+                </select>
               </div>
             </div>
           )}
+          {netPanel.parent && (() => {
+            // Plegado: sentido (V = valle, como el resto de la pieza; M = monte, al revés) y ángulo respecto de la madre.
+            const rev = (netPanel.sign == null ? -1 : netPanel.sign) === 1, ang = netPanel.angle == null ? 90 : netPanel.angle;
+            return (
+              <div style={{ background: '#f0ebe0', border: '1px solid #e2dac9', borderRadius: 6, padding: 8, marginBottom: 8 }}>
+                <div style={{ ...lbl, display: 'flex', justifyContent: 'space-between' }}><span>{t('Plegado en 3D')}</span><b style={{ color: '#9a5b1f', fontFamily: "'JetBrains Mono',monospace" }}>{rev ? 'M' : 'V'} {Math.round(ang)}°</b></div>
+                <div style={{ display: 'flex', gap: 5, marginBottom: 6 }}>
+                  {[[false, t('Hacia dentro (valle)')], [true, t('Hacia fuera (monte)')]].map(([r, lb]) => (
+                    <button key={lb} onClick={() => setPanel({ sign: r ? 1 : undefined })} aria-pressed={rev === r} style={{ ...btnSt, flex: 1, padding: '5px 2px', fontSize: 10.5, background: rev === r ? '#211d18' : '#fff', color: rev === r ? '#fff' : '#3d3830' }}>{lb}</button>
+                  ))}
+                </div>
+                <input type="range" min="0" max="180" step="1" value={ang} aria-label={t('Ángulo de plegado °')} onChange={e => setPanel({ angle: +e.target.value })} style={{ width: '100%', accentColor: '#9a5b1f' }} />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 3, marginTop: 4 }}>
+                  {[0, 45, 90, 120, 135, 180].map(v => <button key={v} onClick={() => setPanel({ angle: v })} style={{ ...btnSt, padding: '3px 0', fontSize: 10, background: ang === v ? '#f7efe2' : '#fff', borderColor: ang === v ? '#9a5b1f' : '#d8d0c2' }}>{v}°</button>)}
+                </div>
+                <div style={{ fontSize: 10, color: '#a59a85', marginTop: 5, lineHeight: 1.5 }}>{t('El ángulo es respecto de la cara madre. Usa la vista 3D y el regulador de plegado para comprobarlo; en el plano cada bisagra muestra V/M y su ángulo.')}</div>
+              </div>
+            );
+          })()}
           <div style={{ marginBottom: 8 }}>
             <MmField label={t('Separación de capa (3D)')} mm={netPanel.zOff || 0} min={-5} max={5} step={0.05} onChange={v => setPanel({ zOff: v })} />
             <div style={{ fontSize: 10, color: '#a59a85', marginTop: 3 }}>{t('Si dos caras plegadas parpadean en 3D, sepáralas 0,2–1 mm (negativo = hacia dentro).')}</div>
@@ -956,6 +981,31 @@ export function DesignerView() {
               <div style={{ fontSize: 10, color: '#a59a85', marginTop: 4, lineHeight: 1.5 }}>{t('Arrastra la cara seleccionada en el plano (imán al centro; Alt = libre). Con el cuadrado rojo de cada borde cambias ancho y profundidad.')}</div>
             </div>
           )}
+          <div style={{ height: 1, background: '#e7e0d4', margin: '10px 0' }} />
+          <ST style={{ marginBottom: 6 }}>{t('Bordes de esta cara')}</ST>
+          <div style={{ display: 'grid', gap: 4, marginBottom: 6 }}>
+            {panelSideList({ ...netPanel, w: netPanelNode ? netPanelNode.w : netPanel.w }).map(sd => (
+              <div key={sd.key} onMouseEnter={() => setHoverSide(sd)} onMouseLeave={() => setHoverSide(null)}
+                style={{ border: '1px solid ' + (hoverSide && hoverSide.key === sd.key ? '#1c6ee0' : '#e7e0d4'), borderRadius: 5, background: '#fff', padding: '5px 6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ flex: 1, fontSize: 10.5, color: '#3d3830' }}>{t(sd.name, { n: sd.nameN })} · {fmtMm(sd.len)}</span>
+                  <select value={sd.type} aria-label={t('Tipo de línea')} onChange={e => patchCustom(cc => setEdgeType(cc, netPanel.id, sd.key, e.target.value))} style={{ ...selectSt, width: 112, padding: '3px 4px', fontSize: 10.5 }}>
+                    {LINE_OPTS.map(o => <option key={o.id} value={o.id}>{t(o.name)}</option>)}
+                  </select>
+                </div>
+                {sd.bulge !== undefined && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginTop: 5 }}>
+                    <MmField label={t('Curva (+ fuera / − dentro)')} mm={sd.bulge} min={-500} max={500} step={0.5} onChange={v => patchCustom(cc => setEdgeBulge(cc, netPanel.id, sd.i, v))} />
+                    <MmField label={t('Radio esquina inicial')} mm={sd.radiusA} min={0} max={500} step={0.5} onChange={v => patchCustom(cc => setVertexRadius(cc, netPanel.id, sd.i, v))} />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={{ ...hint, marginBottom: 8 }}>{netPanel.shape === 'poly'
+            ? t('Cada lado puede ser corte, pliegue, punteado o no llevar línea, curvarse hacia fuera o hacia dentro, y cada esquina tener su propio radio.')
+            : t('Cada lado puede ser corte, pliegue, punteado o no llevar línea. Para curvar lados o redondear una sola esquina, pasa la cara a forma libre (botón de vértices).')}</div>
+
           <div style={{ fontSize: 10.5, color: '#8a8071', marginBottom: 8 }}>
             {netPanel.parent
               ? t('Unida a: {name} · {edge}', { name: t(parentPanel?.name || netPanel.parent), edge: (() => { const e = parentEdges.find(x => x.id === netPanel.edge); return e ? edgeLabel(e) : nameOf(EDGE_OPTIONS, netPanel.edge); })() })

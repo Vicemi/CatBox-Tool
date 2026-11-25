@@ -3,7 +3,7 @@
 //   mode 'net' = red libre de caras: varias piezas raíz, caras hijas, solapas,
 //                pestañas, ángulos de plegado y cualquier combinación de bordes.
 // Unidades internas: mm. La interfaz convierte a cm.
-import { shapePoints, wrapFlapInfo } from './shapes.js';
+import { shapePoints, wrapFlapInfo, polyOutline } from './shapes.js';
 
 export const WALL_IDS = ['front', 'back', 'left', 'right'];
 export const WALL_NAMES = {
@@ -47,12 +47,25 @@ const EDGES = ['far', 'near', 'xmin', 'xmax'];
 const isPolyEdge = e => typeof e === 'string' && /^e\d+$/.test(e);
 const isAnyEdge = e => EDGES.includes(e) || isPolyEdge(e);
 const edgeIndex = e => isPolyEdge(e) ? Number(e.slice(1)) : -1;
+// Lados «lógicos» de una cara: en forma libre son los vértices editables (las curvas y redondeos se muestrean
+// aparte); en el resto, la silueta. Las uniones (eN) y los tipos de línea por lado usan estos índices.
+const logicalPtsOf = n => (n.shape === 'poly' && Array.isArray(n.pts) && n.pts.length >= 3 ? n.pts : n.shapePts);
+const LINE_KINDS = ['cut', 'crease', 'perf', 'none'];
+// Vértices que no se redondean: los que tocan un lado con una hija unida (la bisagra debe ser recta y completa).
+const lockedVerts = (n, kids) => {
+  const L = logicalPtsOf(n), s = new Set();
+  if (!L) return s;
+  for (const ch of kids || []) { const i = edgeIndex(ch.edge); if (i >= 0) { s.add(i % L.length); s.add((i + 1) % L.length); } }
+  return s;
+};
+const outlineOpt = (n, hinge, kids) => ({ corner: n.corner, hinge, n: n.n, pts: n.pts, mL: n.miterL, mR: n.miterR, rL: n.roundL, rR: n.roundR, R: n.ptsR, B: n.ptsB, lockV: lockedVerts(n, kids) });
 const edgeLenOf = (n, edge) => {
   const i = edgeIndex(edge);
-  if (i < 0 || !n.shapePts || n.shapePts.length < 3) {
+  const pts = logicalPtsOf(n);
+  if (i < 0 || !pts || pts.length < 3) {
     return (edge === 'far' || edge === 'near') ? n.w : n.h;
   }
-  const pts = n.shapePts, p0 = pts[i % pts.length], p1 = pts[(i + 1) % pts.length];
+  const p0 = pts[i % pts.length], p1 = pts[(i + 1) % pts.length];
   return Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
 };
 
@@ -131,6 +144,10 @@ export function normalizeCustom(raw) {
       miterR: p.miterR > 0 ? clamp(num(p.miterR, 0), 0, 85) : undefined,
       roundL: p.roundL > 0 ? clamp(num(p.roundL, 0), 0, 500) : undefined, // radio de las esquinas libres (mm)
       roundR: p.roundR > 0 ? clamp(num(p.roundR, 0), 0, 500) : undefined,
+      ptsR: Array.isArray(p.ptsR) ? p.ptsR.map(v => clamp(num(v, 0), 0, 1000)) : undefined, // radio por vértice (forma libre)
+      ptsB: Array.isArray(p.ptsB) ? p.ptsB.map(v => clamp(num(v, 0), -2000, 2000)) : undefined, // curva por lado (flecha mm)
+      edgeTypes: p.edgeTypes && typeof p.edgeTypes === 'object' ? Object.fromEntries(Object.entries(p.edgeTypes).filter(([, v]) => LINE_KINDS.includes(v))) : undefined, // tipo de línea por lado
+      hingeType: LINE_KINDS.includes(p.hingeType) ? p.hingeType : undefined, // línea de la bisagra con la madre (pliegue por defecto)
       fit: p.fit === true || undefined, // el ancho sigue al largo del borde de la madre (si se cambia la madre, la solapa se adapta)
       angle: clamp(num(p.angle, 90), 0, 360),
       sign: p.sign === 1 ? 1 : p.sign === -1 ? -1 : undefined,
@@ -303,7 +320,7 @@ function layoutPanels(defs, state, t, opts = {}) {
   };
 
   const polyFrame = (parent, child, edge, off) => {
-    const pts = parent.shapePts || shapePoints(parent.shape, parent.w, parent.h, { corner: parent.corner, hinge: false, n: parent.n, pts: parent.pts, rL: parent.roundL, rR: parent.roundR });
+    const pts = logicalPtsOf(parent) || shapePoints(parent.shape, parent.w, parent.h, outlineOpt(parent, false));
     const idx = edgeIndex(edge) % pts.length;
     const p0 = pts[idx], p1 = pts[(idx + 1) % pts.length];
     // El motor de plegado espera la bisagra en dirección p1→p0: así el eje +y
@@ -383,7 +400,7 @@ function layoutPanels(defs, state, t, opts = {}) {
     child.hinge = hinge;
     child.attach = ATTACH_OF_ROT[child.rotZ] || 'b';
     child.edgeOffset = off;
-    child.shapePts = shapePoints(child.shape, child.w, child.h, { corner: child.corner, hinge: true, n: child.n, pts: child.pts, mL: child.miterL, mR: child.miterR, rL: child.roundL, rR: child.roundR });
+    child.shapePts = shapePoints(child.shape, child.w, child.h, outlineOpt(child, true, childrenOf[child.id]));
     placeChildren(child);
   };
 
@@ -427,7 +444,7 @@ function layoutPanels(defs, state, t, opts = {}) {
     root.O = [0, root.h]; root.ex = [1, 0]; root.ey = [0, -1];
     root.attach = undefined;
     root.edgeOffset = 0;
-    root.shapePts = shapePoints(root.shape, root.w, root.h, { corner: root.corner, hinge: false, n: root.n, pts: root.pts, rL: root.roundL, rR: root.roundR });
+    root.shapePts = shapePoints(root.shape, root.w, root.h, outlineOpt(root, false, childrenOf[root.id]));
     placeChildren(root);
     const treeNodes = nodes.filter(n => n === root || isDescendant(n, root, byId));
     const bb = bboxNodes(treeNodes);
@@ -510,10 +527,13 @@ export function genCustom(ctx, state, t) {
     else ctx.safeP(pts, Math.min(3, n.w / 4, n.h / 4));
   }
 
-  // Bisagras: el tramo real de la hija (de x = 0 a x = w), también en lados poligonales.
+  // Bisagras: el tramo real de la hija (de x = 0 a x = w), también en lados poligonales. La línea es pliegue
+  // salvo que la cara pida otra (punteado, corte = pieza separada, o sin línea). `fold` alimenta las marcas
+  // de sentido en el plano: V = valle (sentido de la pieza), M = monte (sentido invertido).
+  const emit = (kind, pts, meta) => { if (kind === 'crease') ctx.crease(pts, meta); else if (kind === 'perf') ctx.perf(pts); else if (kind === 'cut') ctx.cut(pts); };
   for (const n of nodes) {
     if (!n.parent) continue;
-    ctx.crease([mapLocal(n, 0, 0), mapLocal(n, n.w, 0)]);
+    emit(n.hingeType || 'crease', [mapLocal(n, 0, 0), mapLocal(n, n.w, 0)], { panelId: n.id, fold: (n.sign == null ? -1 : n.sign) === -1 ? 'V' : 'M', angle: n.angle == null ? 90 : n.angle });
   }
 
   // Pliegues internos declarados por la cara (p. ej. base de pestaña de una solapa envolvente)
@@ -530,7 +550,9 @@ export function genCustom(ctx, state, t) {
   ];
   // Corta el lado a→b salvo los tramos donde se apoya la bisagra de alguna hija (sea cual sea el borde
   // con el que se unió): así una solapa nunca queda «cortada» de su madre ni hay cortes sobre un pliegue.
-  const cutAround = (a, b, kids) => {
+  const cutAround = (a, b, kids, kind = 'cut') => {
+    if (kind === 'none') return;
+    const line = pts => (kind === 'crease' ? ctx.crease(pts) : kind === 'perf' ? ctx.perf(pts) : ctx.cut(pts));
     const vx = b[0] - a[0], vy = b[1] - a[1], L2 = vx * vx + vy * vy, L = Math.sqrt(L2) || 1;
     const off = p => Math.abs((p[0] - a[0]) * vy - (p[1] - a[1]) * vx) / L;
     const tOf = p => ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / (L2 || 1);
@@ -546,29 +568,31 @@ export function genCustom(ctx, state, t) {
     intervals.sort((u, v) => u[0] - v[0]);
     let cursor = 0;
     for (const [t1, t2] of intervals) {
-      if (t1 > cursor + 1e-4) ctx.cut([lerp(a, b, cursor), lerp(a, b, t1)]);
+      if (t1 > cursor + 1e-4) line([lerp(a, b, cursor), lerp(a, b, t1)]);
       cursor = Math.max(cursor, t2);
     }
-    if (cursor < 1 - 1e-4) ctx.cut([lerp(a, b, cursor), b]);
+    if (cursor < 1 - 1e-4) line([lerp(a, b, cursor), b]);
   };
   for (const n of nodes) {
     const kids = lay.childrenOf[n.id] || [];
+    const typeOf = key => (n.edgeTypes && n.edgeTypes[key]) || 'cut'; // tipo de línea elegido para ese lado
     if (n.shape !== 'rect' || !isPlainRect(n)) {
-      // Siluetas especiales: se corta su perímetro real (pestañas, muescas, arcos, ingletes…),
-      // no el rectángulo envolvente.
+      // Siluetas especiales: se corta su perímetro real (pestañas, muescas, arcos, ingletes, curvas…),
+      // no el rectángulo envolvente. En forma libre cada tramo sabe a qué lado lógico pertenece.
       const pts = n.shapePts;
+      const seg = n.shape === 'poly' && n.pts && (n.ptsR || n.ptsB) ? polyOutline(n.pts, outlineOpt(n, !!n.parent, kids)).seg : null;
       for (let i = 0; i < pts.length; i++) {
         const p0 = pts[i], p1 = pts[(i + 1) % pts.length];
         if (n.parent && Math.abs(p0[1]) < 0.01 && Math.abs(p1[1]) < 0.01) continue; // bisagra
         const a = mapLocal(n, p0[0], p0[1]), b = mapLocal(n, p1[0], p1[1]);
-        if (dist(a, b) >= 0.05) cutAround(a, b, kids);
+        if (dist(a, b) >= 0.05) cutAround(a, b, kids, typeOf('e' + (seg ? seg[i] : i)));
       }
       continue;
     }
     for (const [edge, p0, p1] of edgeEnds) {
       if (n.parent && edge === 'near') continue;
       const a = mapLocal(n, ...p0(n)), b = mapLocal(n, ...p1(n));
-      if (dist(a, b) >= 0.05) cutAround(a, b, kids);
+      if (dist(a, b) >= 0.05) cutAround(a, b, kids, typeOf(edge));
     }
   }
 
@@ -985,7 +1009,7 @@ export function edgeFree(custom, parentId, edge, exceptId) {
   return !(c.panels || []).some(p => p.parent === parentId && p.edge === edge && p.id !== exceptId);
 }
 
-const panelLocalPts = p => shapePoints(p.shape, p.w, p.h, { corner: p.corner, hinge: !!p.parent, n: p.n, pts: p.pts, mL: p.miterL, mR: p.miterR, rL: p.roundL, rR: p.roundR });
+const panelLocalPts = p => shapePoints(p.shape, p.w, p.h, outlineOpt(p, !!p.parent));
 
 /**
  * Bordes a los que se puede unir una cara hija: [{ id, name, len, a, b, angA, angB }].
@@ -993,7 +1017,10 @@ const panelLocalPts = p => shapePoints(p.shape, p.w, p.h, { corner: p.corner, hi
  * En una cara hija no se ofrece el borde de bisagra (ya está unido a su madre).
  */
 export function panelEdgeList(p) {
-  const pts = panelLocalPts(p);
+  // Forma libre: lados lógicos (vértices editables); un lado curvado no admite unión (la bisagra debe ser recta).
+  const free = p.shape === 'poly' && Array.isArray(p.pts) && p.pts.length >= 3;
+  const pts = free ? p.pts : panelLocalPts(p);
+  const curved = i => free && Array.isArray(p.ptsB) && +p.ptsB[i];
   const n = pts.length;
   let area = 0;
   for (let i = 0; i < n; i++) { const q = pts[(i + 1) % n]; area += pts[i][0] * q[1] - q[0] * pts[i][1]; }
@@ -1019,7 +1046,7 @@ export function panelEdgeList(p) {
   const out = [];
   for (let i = 0; i < n; i++) {
     const a = pts[i], b = pts[(i + 1) % n], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    if (len < 3) continue; // tramos de curva demasiado cortos para unir nada
+    if (len < 3 || curved(i)) continue; // tramos de curva demasiado cortos, o lado curvado
     if (p.parent && Math.abs(a[1]) < 1e-6 && Math.abs(b[1]) < 1e-6) continue; // bisagra
     out.push({ id: 'e' + i, name: 'Lado {n}', nameN: out.length + 1, len, a, b, angA: angAt(i), angB: angAt((i + 1) % n) });
   }
@@ -1103,15 +1130,17 @@ export function editVertex(custom, id, op, i, pt) {
   const p = c.panels.find(x => x.id === id);
   if (!p || p.shape !== 'poly' || !p.pts) return c;
   const pts = p.pts.map(q => q.slice());
+  // Radio por vértice y curva por lado viajan con sus índices al insertar/borrar.
+  const R = p.pts.map((_, k) => (p.ptsR && +p.ptsR[k]) || 0), B = p.pts.map((_, k) => (p.ptsB && +p.ptsB[k]) || 0);
   const fixed = k => p.parent && Math.abs(pts[k][1]) < 1e-6 && (Math.abs(pts[k][0]) < 1e-6 || Math.abs(pts[k][0] - p.w) < 1e-6);
   const r3 = v => Math.round(v * 1000) / 1000;
   if (op === 'move' && pts[i] && !fixed(i)) pts[i] = [r3(pt[0]), r3(p.parent ? Math.max(0.01, pt[1]) : pt[1])];
-  else if (op === 'insert' && pts[i]) pts.splice(i + 1, 0, [r3(pt[0]), r3(pt[1])]);
-  else if (op === 'delete' && pts.length > 3 && pts[i] && !fixed(i)) pts.splice(i, 1);
+  else if (op === 'insert' && pts[i]) { pts.splice(i + 1, 0, [r3(pt[0]), r3(pt[1])]); R.splice(i + 1, 0, 0); B.splice(i + 1, 0, B[i]); }
+  else if (op === 'delete' && pts.length > 3 && pts[i] && !fixed(i)) { pts.splice(i, 1); R.splice(i, 1); B.splice(i, 1); }
   else return c;
   // Mantiene w/h como caja envolvente (las medidas de la cara siguen siendo coherentes con su silueta).
   const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]);
-  const patch = { pts };
+  const patch = { pts, ptsR: R.some(Boolean) ? R : undefined, ptsB: B.some(Boolean) ? B : undefined };
   if (!p.parent) {
     // Pieza raíz: el contorno se reubica para que su caja empiece en (0, 0), como el resto de caras.
     const x0 = Math.min(...xs), y0 = Math.min(...ys);
@@ -1120,6 +1149,56 @@ export function editVertex(custom, id, op, i, pt) {
   }
   else patch.h = Math.max(2, Math.max(...ys));
   return updateNetPanel(c, id, patch);
+}
+
+/** Radio de redondeo de un vértice (forma libre). */
+export function setVertexRadius(custom, id, i, r) {
+  const c = normalizeCustom(custom), p = c.panels.find(x => x.id === id);
+  if (!p || p.shape !== 'poly' || !p.pts || !p.pts[i]) return c;
+  const R = p.pts.map((_, k) => (k === i ? Math.max(0, +r || 0) : (p.ptsR && +p.ptsR[k]) || 0));
+  return updateNetPanel(c, id, { ptsR: R.some(Boolean) ? R : undefined });
+}
+
+/** Curva de un lado (forma libre): flecha en mm, + hacia fuera, − hacia dentro. */
+export function setEdgeBulge(custom, id, i, s) {
+  const c = normalizeCustom(custom), p = c.panels.find(x => x.id === id);
+  if (!p || p.shape !== 'poly' || !p.pts || !p.pts[i]) return c;
+  const B = p.pts.map((_, k) => (k === i ? +s || 0 : (p.ptsB && +p.ptsB[k]) || 0));
+  return updateNetPanel(c, id, { ptsB: B.some(Boolean) ? B : undefined });
+}
+
+/** Tipo de línea de un lado (cut | crease | perf | none); 'hinge' cambia la línea de unión con la madre. */
+export function setEdgeType(custom, id, key, kind) {
+  const c = normalizeCustom(custom), p = c.panels.find(x => x.id === id);
+  if (!p || !LINE_KINDS.includes(kind)) return c;
+  if (key === 'hinge') return updateNetPanel(c, id, { hingeType: kind === 'crease' ? undefined : kind });
+  const et = { ...(p.edgeTypes || {}) };
+  if (kind === 'cut') delete et[key]; else et[key] = kind;
+  return updateNetPanel(c, id, { edgeTypes: Object.keys(et).length ? et : undefined });
+}
+
+/**
+ * Lados editables de una cara para el panel «Bordes»: [{ key, name, len, a, b, type, bulge, radiusA }].
+ * Rectángulo puro: bordes con nombre; forma libre: lados lógicos; resto: tramos de su silueta.
+ */
+export function panelSideList(p) {
+  const named = { far: 'Borde exterior', near: 'Borde inferior', xmin: 'Borde izquierdo', xmax: 'Borde derecho' };
+  const typeOf = k => (p.edgeTypes && p.edgeTypes[k]) || 'cut';
+  if (isPlainRect(p)) {
+    const ends = { far: [[0, p.h], [p.w, p.h]], near: [[0, 0], [p.w, 0]], xmin: [[0, 0], [0, p.h]], xmax: [[p.w, 0], [p.w, p.h]] };
+    return Object.keys(ends).filter(k => !(p.parent && k === 'near')).map(k => ({ key: k, name: named[k], len: k === 'far' || k === 'near' ? p.w : p.h, a: ends[k][0], b: ends[k][1], type: typeOf(k) }));
+  }
+  const free = p.shape === 'poly' && Array.isArray(p.pts) && p.pts.length >= 3;
+  const pts = free ? p.pts : panelLocalPts(p);
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len < 0.5) continue;
+    if (p.parent && Math.abs(a[1]) < 1e-6 && Math.abs(b[1]) < 1e-6) continue; // bisagra: se edita aparte
+    out.push({ key: 'e' + i, i, name: 'Lado {n}', nameN: out.length + 1, len, a, b, type: typeOf('e' + i),
+      bulge: free ? (p.ptsB && +p.ptsB[i]) || 0 : undefined, radiusA: free ? (p.ptsR && +p.ptsR[i]) || 0 : undefined });
+  }
+  return out;
 }
 
 /** Red nueva con una sola pieza de la forma elegida (empezar desde cero). */
