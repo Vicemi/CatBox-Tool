@@ -135,12 +135,16 @@ export class Folder {
     const T = this.T, t = this._t;
     const fz = Number.isFinite(faceZ) ? faceZ : t;
     let geo;
+    const holes = this._holes;
+    // Con agujeros/ranuras la cara se extruye como silueta (la caja de BoxGeometry no admite huecos).
+    if (holes && holes.length && !(pts && pts.length > 2)) pts = kind === 'rect' || kind === 'lid' ? [[0, 0], [len, 0], [len, out], [0, out]] : null;
     if (pts && pts.length > 2) {
       // Silueta personalizada: misma polilínea que el troquel 2D.
       const S = new T.Shape();
       S.moveTo(pts[0][0], pts[0][1]);
       for (let i = 1; i < pts.length; i++) S.lineTo(pts[i][0], pts[i][1]);
       S.closePath();
+      for (const h of (holes || [])) { const H = new T.Path(); H.moveTo(h[0][0], h[0][1]); for (let i = 1; i < h.length; i++) H.lineTo(h[i][0], h[i][1]); H.closePath(); S.holes.push(H); }
       geo = new T.ExtrudeGeometry(S, { depth: t, bevelEnabled: false, curveSegments: 4 });
       retopUV(geo, len, out, rotZ, flip, uvRect, this.sbb, this.innerUV, fz, aff);
     } else if (kind === 'rect' || kind === 'lid') {
@@ -166,7 +170,9 @@ export class Folder {
     };
     if (depth === 0) {
       const rz = spec.uvRot || 0;
+      this._holes = spec.holes || null;
       const rootMesh = this.panelMesh('rect', spec.lx, spec.ly, rz, flipWithPiece(rz, spec.attach), spec.uv, spec.pts, spec.uvFace, spec.uvAffine);
+      this._holes = null;
       rootMesh.userData.panel = { panelId: spec.panelId, role: spec.role, surface: spec.surface, up: spec.up, heroRegion: spec.heroRegion };
       parentGroup.add(rootMesh);
       for (const kid of (spec.kids || [])) this.buildNode(parentGroup, spec, kid, 1, pc, rz);
@@ -190,9 +196,10 @@ export class Folder {
     fg.position.x = edgeOff;
     g.add(fg);
     this._shapeN = spec.n || null;
+    this._holes = spec.holes || null;
     const mesh = this.panelMesh(spec.shape || 'rect', len, spec.out, rz, flipWithPiece(rz, spec.attach), spec.uv, spec.pts, spec.uvFace, spec.uvAffine);
     mesh.userData.panel = { panelId: spec.panelId, role: spec.role, surface: spec.surface, up: spec.up, heroRegion: spec.heroRegion };
-    this._shapeN = null;
+    this._shapeN = null; this._holes = null;
     // 纸层堆叠：副翼类面板沿法向内缩，消除合盖后的共面 z-fighting
     const zoff = { glue: -1.05, dust: -0.62, ear: -0.62, tuck: -0.55 }[spec.shape] || 0;
     if (zoff) mesh.position.z = zoff * this._t;

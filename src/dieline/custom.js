@@ -38,6 +38,8 @@ export const PANEL_TYPES = [
 ];
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+// Rectángulo puro (sin inglete ni esquinas redondeadas): el único que usa los 4 bordes con nombre y la malla de caja.
+const isPlainRect = p => (p.shape === 'rect' || p.shape === 'lid') && !p.miterL && !p.miterR && !p.roundL && !p.roundR;
 const num = (v, d) => Number.isFinite(+v) ? +v : d;
 const ATTACH_OF_ROT = { 0: 'b', 90: 'r', 180: 't', 270: 'l' };
 const ROTADD = { far: 0, near: 180, xmin: 90, xmax: 270 };
@@ -127,13 +129,15 @@ export function normalizeCustom(raw) {
       corner: clamp(num(p.corner, 0), 0, 200),
       miterL: p.miterL > 0 ? clamp(num(p.miterL, 0), 0, 85) : undefined, // inglete de los extremos de la solapa (°)
       miterR: p.miterR > 0 ? clamp(num(p.miterR, 0), 0, 85) : undefined,
+      roundL: p.roundL > 0 ? clamp(num(p.roundL, 0), 0, 500) : undefined, // radio de las esquinas libres (mm)
+      roundR: p.roundR > 0 ? clamp(num(p.roundR, 0), 0, 500) : undefined,
       angle: clamp(num(p.angle, 90), 0, 360),
       sign: p.sign === 1 ? 1 : p.sign === -1 ? -1 : undefined,
       zOff: clamp(num(p.zOff, 0), -5, 5),
       shift: clamp(num(p.shift, 0), -2000, 2000),
       align: ['start', 'center', 'end'].includes(p.align) ? p.align : 'center',
       role: p.role === 'hero' ? 'hero' : 'design',
-      slits: Array.isArray(p.slits) ? p.slits.filter(q => q && [q.x1, q.y1, q.x2, q.y2].every(Number.isFinite)).map(q => ({ x1: +q.x1, y1: +q.y1, x2: +q.x2, y2: +q.y2, w: clamp(num(q.w, 1.2), 0, 20) })) : [],
+      slits: Array.isArray(p.slits) ? p.slits.filter(q => q && [q.x1, q.y1, q.x2, q.y2].every(Number.isFinite)).map(q => ({ x1: +q.x1, y1: +q.y1, x2: +q.x2, y2: +q.y2, w: clamp(num(q.w, 1.2), 0, 20), round: q.round === true || undefined })) : [],
       folds: Array.isArray(p.folds) ? p.folds.filter(q => Array.isArray(q) && q.length === 2 && q[0] && q[1] && [q[0][0], q[0][1], q[1][0], q[1][1]].every(Number.isFinite)).map(q => [[+q[0][0], +q[0][1]], [+q[1][0], +q[1][1]]]) : []
     });
   }
@@ -156,9 +160,10 @@ export function normalizeCustom(raw) {
   const lines = (Array.isArray(r.lines) ? r.lines : []).filter(l => l && l.panelId && [l.x1, l.y1, l.x2, l.y2].every(Number.isFinite)).map((l, i) => ({
     id: String(l.id || ('l' + i)),
     panelId: String(l.panelId),
-    kind: ['cut', 'crease', 'perf', 'slot'].includes(l.kind) ? l.kind : 'cut',
+    kind: ['cut', 'crease', 'perf', 'slot', 'hole'].includes(l.kind) ? l.kind : 'cut',
     x1: +l.x1, y1: +l.y1, x2: +l.x2, y2: +l.y2,
-    w: clamp(num(l.w, l.kind === 'slot' ? 1.2 : 0), 0, 20)
+    w: clamp(num(l.w, l.kind === 'slot' ? 1.2 : l.kind === 'hole' ? 10 : 0), 0, l.kind === 'hole' ? 2000 : 20),
+    round: l.round === true || undefined // ranura con extremos redondeados
   }));
   const mode = r.mode === 'net' ? 'net' : 'box';
   if (mode === 'net' && !panels.length) {
@@ -297,7 +302,7 @@ function layoutPanels(defs, state, t, opts = {}) {
   };
 
   const polyFrame = (parent, child, edge, off) => {
-    const pts = parent.shapePts || shapePoints(parent.shape, parent.w, parent.h, { corner: parent.corner, hinge: false, n: parent.n, pts: parent.pts });
+    const pts = parent.shapePts || shapePoints(parent.shape, parent.w, parent.h, { corner: parent.corner, hinge: false, n: parent.n, pts: parent.pts, rL: parent.roundL, rR: parent.roundR });
     const idx = edgeIndex(edge) % pts.length;
     const p0 = pts[idx], p1 = pts[(idx + 1) % pts.length];
     // El motor de plegado espera la bisagra en dirección p1→p0: así el eje +y
@@ -377,7 +382,7 @@ function layoutPanels(defs, state, t, opts = {}) {
     child.hinge = hinge;
     child.attach = ATTACH_OF_ROT[child.rotZ] || 'b';
     child.edgeOffset = off;
-    child.shapePts = shapePoints(child.shape, child.w, child.h, { corner: child.corner, hinge: true, n: child.n, pts: child.pts, mL: child.miterL, mR: child.miterR });
+    child.shapePts = shapePoints(child.shape, child.w, child.h, { corner: child.corner, hinge: true, n: child.n, pts: child.pts, mL: child.miterL, mR: child.miterR, rL: child.roundL, rR: child.roundR });
     placeChildren(child);
   };
 
@@ -420,7 +425,7 @@ function layoutPanels(defs, state, t, opts = {}) {
     root.O = [0, root.h]; root.ex = [1, 0]; root.ey = [0, -1];
     root.attach = undefined;
     root.edgeOffset = 0;
-    root.shapePts = shapePoints(root.shape, root.w, root.h, { corner: root.corner, hinge: false, n: root.n, pts: root.pts });
+    root.shapePts = shapePoints(root.shape, root.w, root.h, { corner: root.corner, hinge: false, n: root.n, pts: root.pts, rL: root.roundL, rR: root.roundR });
     placeChildren(root);
     const treeNodes = nodes.filter(n => n === root || isDescendant(n, root, byId));
     const bb = bboxNodes(treeNodes);
@@ -499,7 +504,7 @@ export function genCustom(ctx, state, t) {
     const fit = Math.max(3, Math.floor(((Math.max(...xs) - Math.min(...xs)) * 0.9) / (fs * 0.55)));
     ctx.label(cx, cy, full.length > fit ? full.slice(0, fit - 1) + '…' : full, fs);
     // Zona segura con la silueta real de la cara (un triángulo tiene zona segura triangular).
-    if ((n.shape === 'rect' || n.shape === 'lid') && !n.miterL && !n.miterR) ctx.safeR(n.rect[0], n.rect[1], n.rect[2], n.rect[3], Math.min(3, n.w / 4, n.h / 4));
+    if (isPlainRect(n)) ctx.safeR(n.rect[0], n.rect[1], n.rect[2], n.rect[3], Math.min(3, n.w / 4, n.h / 4));
     else ctx.safeP(pts, Math.min(3, n.w / 4, n.h / 4));
   }
 
@@ -546,7 +551,7 @@ export function genCustom(ctx, state, t) {
   };
   for (const n of nodes) {
     const kids = lay.childrenOf[n.id] || [];
-    if (n.shape !== 'rect' || n.miterL || n.miterR) {
+    if (n.shape !== 'rect' || !isPlainRect(n)) {
       // Siluetas especiales: se corta su perímetro real (pestañas, muescas, arcos, ingletes…),
       // no el rectángulo envolvente.
       const pts = n.shapePts;
@@ -566,21 +571,13 @@ export function genCustom(ctx, state, t) {
   }
 
   // Ranuras / encajes declarados por la cara (p. ej. ranuras laterales de la envolvente).
-  // Si la ranura tiene ancho, se corta como rectángulo cerrado; si no, como línea.
+  // Con ancho se corta su contorno cerrado (rectángulo u oblongo redondeado); sin ancho, como línea.
   const drawSlot = (n, s) => {
-    const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
-    const len = Math.hypot(dx, dy);
+    const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
     if (len < 0.01) return;
-    if (s.w > 0) {
-      const nx = -dy / len * s.w / 2, ny = dx / len * s.w / 2;
-      const pts = [
-        [s.x1 + nx, s.y1 + ny], [s.x2 + nx, s.y2 + ny],
-        [s.x2 - nx, s.y2 - ny], [s.x1 - nx, s.y1 - ny], [s.x1 + nx, s.y1 + ny]
-      ].map(p => mapLocal(n, p[0], p[1]));
-      ctx.encaje(pts, { panelId: n.id, kind: 'encaje', len, w: s.w });
-    } else {
-      ctx.encaje([mapLocal(n, s.x1, s.y1), mapLocal(n, s.x2, s.y2)], { panelId: n.id, kind: 'encaje', len, w: 0 });
-    }
+    const loc = cutoutLocal(s);
+    if (loc) ctx.encaje([...loc, loc[0]].map(p => mapLocal(n, p[0], p[1])), { panelId: n.id, kind: 'encaje', len, w: s.w });
+    else ctx.encaje([mapLocal(n, s.x1, s.y1), mapLocal(n, s.x2, s.y2)], { panelId: n.id, kind: 'encaje', len, w: 0 });
   };
   for (const n of nodes) for (const s of (n.slits || [])) drawSlot(n, s);
 
@@ -589,6 +586,7 @@ export function genCustom(ctx, state, t) {
     const n = lay.byId.get(l.panelId);
     if (!n) continue;
     if (l.kind === 'slot') drawSlot(n, l);
+    else if (l.kind === 'hole') { const loc = cutoutLocal(l); if (loc) ctx.cut([...loc, loc[0]].map(p => mapLocal(n, p[0], p[1]))); }
     else if (l.kind === 'crease') ctx.crease([mapLocal(n, l.x1, l.y1), mapLocal(n, l.x2, l.y2)]);
     else if (l.kind === 'perf') ctx.perf([mapLocal(n, l.x1, l.y1), mapLocal(n, l.x2, l.y2)]);
     else ctx.cut([mapLocal(n, l.x1, l.y1), mapLocal(n, l.x2, l.y2)]);
@@ -599,8 +597,33 @@ export function genCustom(ctx, state, t) {
   return lay;
 }
 
+/**
+ * Contorno local (abierto, sin repetir el primer punto) de un recorte de la cara:
+ *  · hole: círculo de centro (x1, y1) y diámetro w;
+ *  · slot con ancho: rectángulo, u oblongo (extremos redondeados) si round.
+ * Devuelve null para líneas sin ancho.
+ */
+export function cutoutLocal(s) {
+  if (s.kind === 'hole') {
+    const r = (s.w || 0) / 2; if (r <= 0.05) return null;
+    const N = Math.max(24, Math.min(96, Math.round(r * 4)));
+    return Array.from({ length: N }, (_, i) => [s.x1 + r * Math.cos(2 * Math.PI * i / N), s.y1 + r * Math.sin(2 * Math.PI * i / N)]);
+  }
+  const dx = s.x2 - s.x1, dy = s.y2 - s.y1, len = Math.hypot(dx, dy);
+  if (!(s.w > 0) || len < 0.01) return null;
+  const ux = dx / len, uy = dy / len, h = s.w / 2, nx = -uy * h, ny = ux * h;
+  if (!s.round) return [[s.x1 + nx, s.y1 + ny], [s.x2 + nx, s.y2 + ny], [s.x2 - nx, s.y2 - ny], [s.x1 - nx, s.y1 - ny]];
+  const base = Math.atan2(ny, nx), out = [], N = 10;
+  for (let i = 0; i <= N; i++) { const a = base - Math.PI * i / N; out.push([s.x2 + h * Math.cos(a), s.y2 + h * Math.sin(a)]); }
+  for (let i = 0; i <= N; i++) { const a = base + Math.PI - Math.PI * i / N; out.push([s.x1 + h * Math.cos(a), s.y1 + h * Math.sin(a)]); }
+  return out;
+}
+
 function nodeTree(n, lay) {
   const kids = (lay.childrenOf[n.id] || []).map(k => nodeTree(k, lay));
+  // Agujeros y ranuras con ancho se ven como huecos reales en 3D (misma silueta que el troquel).
+  const holes = [...(n.slits || []), ...(lay.c.lines || []).filter(l => l.panelId === n.id && (l.kind === 'slot' || l.kind === 'hole'))]
+    .map(cutoutLocal).filter(Boolean);
   const base = {
     edge: n.parent ? n.edge : undefined,
     out: n.h,
@@ -625,13 +648,14 @@ function nodeTree(n, lay) {
     uvFace: 0,
     // Exact local→net mapping of this panel (same frame as the mesh), so art lands right at any hinge angle.
     uvAffine: n.O && n.ex && n.ey ? [n.O[0], n.O[1], n.ex[0], n.ex[1], n.ey[0], n.ey[1]] : undefined,
+    holes: holes.length ? holes : undefined,
     kids
   };
   // El 3D usa exactamente la misma silueta que el plano 2D (incluido el inglete); solo el rectángulo puro
   // y la tapa conservan su malla propia.
   // El nombre de la forma se conserva (la secuencia de montaje clasifica solapas por tipo); la malla usa pts.
   if (n.shape === 'lid') base.shape = 'lid';
-  else if (n.shape === 'rect' && !n.miterL && !n.miterR) base.shape = 'rect';
+  else if (n.shape === 'rect' && isPlainRect(n)) base.shape = 'rect';
   else { base.shape = ['tuck', 'dust', 'ear', 'glue'].includes(n.shape) ? n.shape : 'poly'; base.pts = n.shapePts; }
   return base;
 }
@@ -959,7 +983,7 @@ export function edgeFree(custom, parentId, edge, exceptId) {
   return !(c.panels || []).some(p => p.parent === parentId && p.edge === edge && p.id !== exceptId);
 }
 
-const panelLocalPts = p => shapePoints(p.shape, p.w, p.h, { corner: p.corner, hinge: !!p.parent, n: p.n, pts: p.pts, mL: p.miterL, mR: p.miterR });
+const panelLocalPts = p => shapePoints(p.shape, p.w, p.h, { corner: p.corner, hinge: !!p.parent, n: p.n, pts: p.pts, mL: p.miterL, mR: p.miterR, rL: p.roundL, rR: p.roundR });
 
 /**
  * Bordes a los que se puede unir una cara hija: [{ id, name, len, a, b, angA, angB }].
@@ -981,7 +1005,7 @@ export function panelEdgeList(p) {
   };
   // Solo un rectángulo puro conserva los 4 bordes con nombre; cualquier otra silueta (solapas con inglete,
   // lengüetas, triángulos…) ofrece sus lados reales, para que lo que se pegue quede sobre la línea de corte.
-  if ((p.shape === 'rect' || p.shape === 'lid') && !p.miterL && !p.miterR) {
+  if (isPlainRect(p)) {
     const list = [
       { id: 'far', name: 'Borde exterior', len: p.w },
       { id: 'xmin', name: 'Borde izquierdo', len: p.h },
@@ -1015,12 +1039,16 @@ export const BUILDER_SHAPES = [
   { id: 'glue', kind: 'flap', name: 'Pegado', shape: 'glue', h: 14 },
   { id: 'ear', kind: 'flap', name: 'Pestaña de esquina', shape: 'ear', h: 16 },
   { id: 'round', kind: 'flap', name: 'Solapa redondeada', shape: 'round', h: 18, corner: 6 },
+  { id: 'asym', kind: 'flap', name: 'Solapa asimétrica', shape: 'rect', h: 18, miter: [0, 45] },
+  { id: 'halfdisc', kind: 'flap', name: 'Solapa circular', shape: 'halfdisc', h: 0 },
+  { id: 'quarter', kind: 'flap', name: 'Solapa recta + curva', shape: 'quarter', h: 22 },
   { id: 'mushroom', kind: 'flap', name: 'Pestaña de encaje (seta)', shape: 'mushroom', h: 18, maxW: 26 }
 ];
 
 // Medidas de una forma de la paleta apoyada en un borde de largo `len`.
 function shapeSize(def, len, state) {
   const w = Math.max(2, def.maxW ? Math.min(def.maxW, len) : len);
+  if (def.id === 'halfdisc') return { w, h: Math.round(w / 2 * 100) / 100 }; // semicírculo
   if (def.kind === 'flap') return { w, h: def.h };
   if (def.id === 'square') return { w, h: w };
   if (def.id === 'rect') return { w, h: Math.max(20, Math.min(state.H || w * 0.6, 3000)) };
@@ -1041,13 +1069,54 @@ export function attachShape(custom, state, parentId, edge, shapeId) {
   const { w, h } = shapeSize(def, pe.len, state);
   // x = 0 de la hija cae en el extremo b del lado (la bisagra va de b a a), x = w en el extremo a.
   const bis = ang => Math.max(0, Math.min(80, (180 - ang) / 2));
-  const miter = def.kind === 'flap' && def.id !== 'mushroom' ? { miterL: bis(pe.angB), miterR: bis(pe.angA) } : {};
+  const miter = def.miter ? { miterL: def.miter[0], miterR: def.miter[1] }
+    : def.kind === 'flap' && !['mushroom', 'halfdisc', 'quarter'].includes(def.id) ? { miterL: bis(pe.angB), miterR: bis(pe.angA) } : {};
   const child = {
     id: nextPanelId(c), name: def.name + ' ' + (c.panels.length + 1), parent: parentId, edge, w, h,
     shape: def.shape, n: def.n, corner: def.corner || (def.id === 'trapezoid' ? Math.round(w * 0.2) : 0),
     angle: 90, role: 'design', ...miter
   };
   return normalizeCustom({ ...c, panels: [...c.panels, child] });
+}
+
+/**
+ * Convierte una cara en «forma libre»: su contorno actual (con ingletes y redondeos ya aplicados) pasa a ser
+ * una lista de vértices editables. Las hijas unidas a lados poligonales siguen en el mismo índice de lado.
+ */
+export function toFreeForm(custom, id) {
+  const c = normalizeCustom(custom);
+  const p = c.panels.find(x => x.id === id);
+  if (!p || p.shape === 'poly') return c;
+  const pts = panelLocalPts(p).map(q => [Math.round(q[0] * 1000) / 1000, Math.round(q[1] * 1000) / 1000]);
+  return updateNetPanel(c, id, { shape: 'poly', pts, miterL: undefined, miterR: undefined, roundL: undefined, roundR: undefined });
+}
+
+/**
+ * Mueve, inserta o borra un vértice de una cara de forma libre (coordenadas locales de la cara).
+ * En una cara hija los dos vértices de bisagra (y = 0 en x = 0 y x = w) no se mueven ni se borran.
+ */
+export function editVertex(custom, id, op, i, pt) {
+  const c = normalizeCustom(custom);
+  const p = c.panels.find(x => x.id === id);
+  if (!p || p.shape !== 'poly' || !p.pts) return c;
+  const pts = p.pts.map(q => q.slice());
+  const fixed = k => p.parent && Math.abs(pts[k][1]) < 1e-6 && (Math.abs(pts[k][0]) < 1e-6 || Math.abs(pts[k][0] - p.w) < 1e-6);
+  const r3 = v => Math.round(v * 1000) / 1000;
+  if (op === 'move' && pts[i] && !fixed(i)) pts[i] = [r3(pt[0]), r3(p.parent ? Math.max(0.01, pt[1]) : pt[1])];
+  else if (op === 'insert' && pts[i]) pts.splice(i + 1, 0, [r3(pt[0]), r3(pt[1])]);
+  else if (op === 'delete' && pts.length > 3 && pts[i] && !fixed(i)) pts.splice(i, 1);
+  else return c;
+  // Mantiene w/h como caja envolvente (las medidas de la cara siguen siendo coherentes con su silueta).
+  const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]);
+  const patch = { pts };
+  if (!p.parent) {
+    // Pieza raíz: el contorno se reubica para que su caja empiece en (0, 0), como el resto de caras.
+    const x0 = Math.min(...xs), y0 = Math.min(...ys);
+    patch.pts = pts.map(q => [r3(q[0] - x0), r3(q[1] - y0)]);
+    patch.w = Math.max(2, Math.max(...xs) - x0); patch.h = Math.max(2, Math.max(...ys) - y0);
+  }
+  else patch.h = Math.max(2, Math.max(...ys));
+  return updateNetPanel(c, id, patch);
 }
 
 /** Red nueva con una sola pieza de la forma elegida (empezar desde cero). */
@@ -1108,9 +1177,9 @@ export function addNetLine(custom, panelId, kind = 'cut') {
   const p = c.panels.find(x => x.id === panelId);
   if (!p) return c;
   const line = {
-    id: nextLineId(c), panelId, kind: ['cut', 'crease', 'perf', 'slot'].includes(kind) ? kind : 'cut',
-    x1: p.w * 0.25, y1: p.h * 0.5, x2: p.w * 0.75, y2: p.h * 0.5,
-    w: kind === 'slot' ? 1.2 : 0
+    id: nextLineId(c), panelId, kind: ['cut', 'crease', 'perf', 'slot', 'hole'].includes(kind) ? kind : 'cut',
+    x1: kind === 'hole' ? p.w * 0.5 : p.w * 0.25, y1: p.h * 0.5, x2: kind === 'hole' ? p.w * 0.5 : p.w * 0.75, y2: p.h * 0.5,
+    w: kind === 'slot' ? 1.2 : kind === 'hole' ? Math.max(2, Math.round(Math.min(p.w, p.h) * 0.25)) : 0
   };
   return normalizeCustom({ ...c, lines: [...c.lines, line] });
 }

@@ -59,7 +59,40 @@ function chamferRect(w, h, cbl, cbr, ctr, ctl) {
  * @param {{corner?:number, hinge?:boolean, arch?:number}} opt
  */
 export function shapePoints(kind, w, h, opt = {}) {
-  const pts = baseShape(kind, w, h, opt);
+  const pts = mitred(baseShape(kind, w, h, opt), w, opt);
+  // Esquinas libres redondeadas por lado (rL a la izquierda de la bisagra, rR a la derecha); la bisagra no se toca.
+  return (opt.rL > 0 || opt.rR > 0) ? filletCorners(pts, w, opt.rL || 0, opt.rR || 0, !!opt.hinge) : pts;
+}
+
+// Redondea cada vértice convexo con el radio de su mitad (izquierda/derecha); en hijas se respetan los vértices de bisagra (y = 0).
+function filletCorners(pts, w, rL, rR, hinge) {
+  const n = pts.length; if (n < 3) return pts;
+  let area = 0; for (let i = 0; i < n; i++) { const q = pts[(i + 1) % n]; area += pts[i][0] * q[1] - q[0] * pts[i][1]; }
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const p = pts[i], a = pts[(i - 1 + n) % n], b = pts[(i + 1) % n];
+    const r = p[0] < w / 2 ? rL : rR;
+    const u1 = [a[0] - p[0], a[1] - p[1]], u2 = [b[0] - p[0], b[1] - p[1]];
+    const l1 = Math.hypot(...u1), l2 = Math.hypot(...u2);
+    const cross = u1[0] * u2[1] - u1[1] * u2[0];
+    const convex = (area >= 0 ? -cross : cross) > 1e-9;
+    if (r <= 0 || (hinge && Math.abs(p[1]) < 1e-6) || !convex || l1 < 1e-6 || l2 < 1e-6) { out.push(p); continue; }
+    const ang = Math.acos(Math.max(-1, Math.min(1, (u1[0] * u2[0] + u1[1] * u2[1]) / (l1 * l2))));
+    let d = r / Math.tan(ang / 2);
+    d = Math.min(d, l1 * 0.49, l2 * 0.49); // no pasar de la mitad del lado (el vecino también redondea)
+    const rr = d * Math.tan(ang / 2);
+    const t1 = [p[0] + u1[0] / l1 * d, p[1] + u1[1] / l1 * d], t2 = [p[0] + u2[0] / l2 * d, p[1] + u2[1] / l2 * d];
+    const bis = [u1[0] / l1 + u2[0] / l2, u1[1] / l1 + u2[1] / l2], bl = Math.hypot(...bis) || 1;
+    const cdist = rr / Math.sin(ang / 2), c = [p[0] + bis[0] / bl * cdist, p[1] + bis[1] / bl * cdist];
+    let a0 = Math.atan2(t1[1] - c[1], t1[0] - c[0]), a1 = Math.atan2(t2[1] - c[1], t2[0] - c[0]);
+    let da = a1 - a0; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
+    const N = 8;
+    for (let k = 0; k <= N; k++) { const aa = a0 + da * k / N; out.push([c[0] + rr * Math.cos(aa), c[1] + rr * Math.sin(aa)]); }
+  }
+  return out;
+}
+
+function mitred(pts, w, opt) {
   const tl = Math.tan(Math.min(85, Math.max(0, opt.mL || 0)) * Math.PI / 180);
   const tr = Math.tan(Math.min(85, Math.max(0, opt.mR || 0)) * Math.PI / 180);
   if (!opt.hinge || (!tl && !tr)) return pts;
@@ -143,6 +176,18 @@ function baseShape(kind, w, h, opt) {
   }
   if (k === 'triangle') {
     return [[0, 0], [w, 0], [w / 2, h]];
+  }
+  if (k === 'halfdisc') {
+    // Solapa circular: media elipse sobre la bisagra (semicírculo si h = w/2).
+    const p = [[0, 0], [w, 0]], n = 24;
+    for (let i = 1; i < n; i++) { const a = Math.PI * i / n; p.push([w / 2 + (w / 2) * Math.cos(a), h * Math.sin(a)]); }
+    return p;
+  }
+  if (k === 'quarter') {
+    // Un lado recto (izquierda, vertical) y el otro curvo (cuarto de elipse hasta la bisagra).
+    const p = [[0, 0], [w, 0]], n = 16;
+    for (let i = 1; i <= n; i++) { const a = (Math.PI / 2) * i / n; p.push([w * Math.cos(a), h * Math.sin(a)]); }
+    return p;
   }
   if (k === 'rttri') {
     // Triángulo rectángulo con el ángulo recto en el extremo izquierdo de la bisagra.
@@ -252,6 +297,8 @@ export const FLAP_SHAPES = [
   { id: 'mushroom', name: 'Pestaña de encaje (seta)', h: 18 },
   { id: 'notch', name: 'Muesca', h: 20 },
   { id: 'wave', name: 'Ondulada', h: 20 },
+  { id: 'halfdisc', name: 'Solapa circular', h: 25 },
+  { id: 'quarter', name: 'Solapa recta + curva', h: 22 },
   { id: 'lid', name: 'Tapa recta', h: 40 }
 ];
 
