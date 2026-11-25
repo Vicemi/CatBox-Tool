@@ -59,6 +59,31 @@ function chamferRect(w, h, cbl, cbr, ctr, ctl) {
  * @param {{corner?:number, hinge?:boolean, arch?:number}} opt
  */
 export function shapePoints(kind, w, h, opt = {}) {
+  const pts = baseShape(kind, w, h, opt);
+  const tl = Math.tan(Math.min(85, Math.max(0, opt.mL || 0)) * Math.PI / 180);
+  const tr = Math.tan(Math.min(85, Math.max(0, opt.mR || 0)) * Math.PI / 180);
+  if (!opt.hinge || (!tl && !tr)) return pts;
+  // Inglete: recorta los extremos de la solapa siguiendo la bisectriz de la esquina de la madre,
+  // así dos solapas en lados vecinos (p. ej. de un triángulo) no se pisan en el plano.
+  const W = Math.max(0.1, Number(w) || 0.1);
+  let out = clipHalf(pts, p => p[0] - p[1] * tl);
+  out = clipHalf(out, p => W - p[1] * tr - p[0]);
+  out = out.filter((p, i) => { const q = out[(i + 1) % out.length]; return Math.hypot(p[0] - q[0], p[1] - q[1]) > 1e-4; });
+  return out.length >= 3 ? out : pts;
+}
+
+// Sutherland–Hodgman contra un semiplano f(p) >= 0 (f lineal).
+function clipHalf(pts, f) {
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length], fa = f(a), fb = f(b);
+    if (fa >= -EPS) out.push(a);
+    if ((fa >= -EPS) !== (fb >= -EPS)) { const t = fa / (fa - fb); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); }
+  }
+  return out;
+}
+
+function baseShape(kind, w, h, opt) {
   w = Math.max(0.1, Number(w) || 0.1);
   h = Math.max(0.1, Number(h) || 0.1);
   const hinge = !!opt.hinge;

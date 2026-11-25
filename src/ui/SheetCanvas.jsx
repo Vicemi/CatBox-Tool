@@ -46,7 +46,15 @@ const toWorld = (fr, x, y) => [fr.O[0] + fr.ex[0] * x + fr.ey[0] * y, fr.O[1] + 
 //  · panelShiftInfo(id) → {dir, shift} | null  — arrastrar la cara seleccionada la desliza por su borde de unión
 //  · selFrame {id,O,ex,ey,w,h,snapW} + onPanelResize(id, 'h'|'wl'|'wr', mm) — tiradores en los bordes de corte
 //  · extraLines [{id,kind,pts}] + onLineDrag({phase,id,index|'body',pt,start,shift,alt}) + selLineId
-export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanelClick, extraLines, onLineDrag, selLineId, panelShiftInfo, onPanelShift, selFrame, onPanelResize }) {
+//  · edgeTargets [{key,panelId,a,b,len}] + armedShape + onEdgePick(target) + onShapeDrop(shapeId, target|null, pt)
+//    — bordes libres donde se pegan formas/solapas (clic en «+», herramienta armada o arrastrar desde la paleta)
+export const SHAPE_MIME = 'application/x-catbox-shape';
+const segDist = (p, a, b) => {
+  const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1;
+  const u = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2));
+  return Math.hypot(p[0] - a[0] - u * dx, p[1] - a[1] - u * dy);
+};
+export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanelClick, extraLines, onLineDrag, selLineId, panelShiftInfo, onPanelShift, selFrame, onPanelResize, edgeTargets, armedShape, onEdgePick, onShapeDrop }) {
   const s = useStore();
   const t = useT();
   const elRef = useRef(null);
@@ -60,7 +68,15 @@ export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanel
   const [cur, setCur] = useState(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [dropPanel, setDropPanel] = useState(null);
+  const [hoverEdge, setHoverEdge] = useState(null);   // borde libre bajo el cursor (herramienta armada o arrastre de forma)
+  const [shapeDrag, setShapeDrag] = useState(false);
   const k = s.k || 1;
+  const nearestEdge = p => {
+    let best = null, bd = 14 / (store.get().k || 1);
+    for (const tg of (edgeTargets || [])) { const d = segDist(p, tg.a, tg.b); if (d < bd) { bd = d; best = tg; } }
+    return best;
+  };
+  const isShapeDrag = e => Array.from((e.dataTransfer && e.dataTransfer.types) || []).includes(SHAPE_MIME);
   const editOn = s.editMode && view === 'structure';
   const highlighted = highlight ? (g.panels || []).find(p => p.panelId === highlight) : null;
   const hasImageDrag = e => Array.from((e.dataTransfer && e.dataTransfer.items) || []).some(it => it.kind === 'file' && /^image\/(png|jpeg|webp)$/i.test(it.type));
@@ -128,6 +144,10 @@ export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanel
     if (e.button !== 0) return;
     userMoved.current = true;
     e.currentTarget.setPointerCapture(e.pointerId);
+    if (view === 'structure' && armedShape && onEdgePick) {
+      const tg = nearestEdge(mmPt(e));
+      if (tg) { onEdgePick(tg); setHoverEdge(null); return; }
+    }
     if (view === 'structure' && onPanelClick) {
       const hit = containerAt(g, mmPt(e));
       if (hit) {
@@ -148,6 +168,7 @@ export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanel
   };
   const onPointerMove = e => {
     if (rulers) setCur(mmPt(e));
+    if (armedShape && view === 'structure' && !drag.current) { const tg = nearestEdge(mmPt(e)); if ((tg && tg.key) !== (hoverEdge && hoverEdge.key)) setHoverEdge(tg); }
     const d = drag.current; if (!d) return;
     const kk = store.get().k;
     if (d.type === 'guide') {
@@ -284,14 +305,28 @@ export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanel
     drag.current = null; setSnapG(null); setHud('');
   };
   const onDragOver = e => {
+    if (view === 'structure' && onShapeDrop && isShapeDrag(e)) {
+      e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+      if (!shapeDrag) setShapeDrag(true);
+      const tg = nearestEdge(mmPt(e));
+      if ((tg && tg.key) !== (hoverEdge && hoverEdge.key)) setHoverEdge(tg);
+      return;
+    }
     if (view !== 'design' || !onImageDrop || !hasImageDrag(e)) return;
     e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
     setDropPanel(containerAt(g, mmPt(e)));
   };
   const onDragLeave = e => {
-    if (!e.currentTarget.contains(e.relatedTarget)) setDropPanel(null);
+    if (!e.currentTarget.contains(e.relatedTarget)) { setDropPanel(null); setShapeDrag(false); setHoverEdge(null); }
   };
   const onDrop = e => {
+    if (view === 'structure' && onShapeDrop && isShapeDrag(e)) {
+      e.preventDefault();
+      const id = e.dataTransfer.getData(SHAPE_MIME), p = mmPt(e);
+      setShapeDrag(false); setHoverEdge(null);
+      if (id) onShapeDrop(id, nearestEdge(p), p);
+      return;
+    }
     if (view !== 'design' || !onImageDrop || !hasImageDrag(e)) return;
     e.preventDefault();
     const panel = containerAt(g, mmPt(e));
@@ -434,6 +469,17 @@ export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanel
             {s.show.safe && <path d={g.safePath} fill="none" stroke="#c9a227" strokeWidth={0.45} strokeDasharray="2.2 1.8" />}
             <path d={g.creasePath} fill="none" stroke="#2E7D46" strokeWidth={1.5} style={{ vectorEffect: 'non-scaling-stroke' }} />
             <path d={g.cutPath} fill="none" stroke="#C8102E" strokeWidth={1.6} style={{ vectorEffect: 'non-scaling-stroke' }} />
+            {g.perfPath && <path d={g.perfPath} fill="none" stroke="#C8102E" strokeWidth={1.6} strokeDasharray="5 3" style={{ vectorEffect: 'non-scaling-stroke' }} />}
+            {(armedShape || shapeDrag) && (edgeTargets || []).map(tg => (
+              <line key={'et' + tg.key} x1={tg.a[0]} y1={tg.a[1]} x2={tg.b[0]} y2={tg.b[1]} stroke="#28a7a1" strokeOpacity={0.55} strokeWidth={4} strokeDasharray="6 4" style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />
+            ))}
+            {hoverEdge && (armedShape || shapeDrag) && (
+              <g style={{ pointerEvents: 'none' }}>
+                <line x1={hoverEdge.a[0]} y1={hoverEdge.a[1]} x2={hoverEdge.b[0]} y2={hoverEdge.b[1]} stroke="#28a7a1" strokeWidth={7} strokeLinecap="round" style={{ vectorEffect: 'non-scaling-stroke' }} />
+                <circle cx={(hoverEdge.a[0] + hoverEdge.b[0]) / 2} cy={(hoverEdge.a[1] + hoverEdge.b[1]) / 2} r={9 / k} fill="#28a7a1" />
+                <text x={(hoverEdge.a[0] + hoverEdge.b[0]) / 2} y={(hoverEdge.a[1] + hoverEdge.b[1]) / 2 + 4.5 / k} fontSize={14 / k} textAnchor="middle" fill="#fff" fontWeight={700}>+</text>
+              </g>
+            )}
             {highlighted && <polygon points={highlighted.pts.map(p => p[0] + ',' + p[1]).join(' ')} fill="rgba(154,91,31,0.16)" stroke="#9a5b1f" strokeWidth={2.4} strokeDasharray="7 3" style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />}
             {highlighted && onPanelShift && panelShiftInfo && (() => {
               const info = panelShiftInfo(highlight);
@@ -463,13 +509,31 @@ export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanel
                   style={{ cursor: hd.cur }} onPointerDown={e => startDrag(e, { type: 'edge', id: fr.id, which: hd.which, fr: { ...fr } })} />
               ));
             })()}
+            {highlighted && onEdgePick && !armedShape && !shapeDrag && (() => {
+              // «+» en cada borde libre de la cara elegida: pega ahí la forma activa de la paleta.
+              const xs = highlighted.pts.map(p => p[0]), ys = highlighted.pts.map(p => p[1]);
+              const cx = xs.reduce((a, v) => a + v, 0) / xs.length, cy = ys.reduce((a, v) => a + v, 0) / ys.length;
+              return (edgeTargets || []).filter(tg => tg.panelId === highlight).map(tg => {
+                const mx = (tg.a[0] + tg.b[0]) / 2, my = (tg.a[1] + tg.b[1]) / 2;
+                let nx = tg.b[1] - tg.a[1], ny = tg.a[0] - tg.b[0]; const nl = Math.hypot(nx, ny) || 1;
+                nx /= nl; ny /= nl; if (nx * (mx - cx) + ny * (my - cy) < 0) { nx = -nx; ny = -ny; }
+                const px = mx + nx * 11 / k, py = my + ny * 11 / k;
+                return (
+                  <g key={'plus' + tg.key} style={{ cursor: 'copy' }} onPointerDown={e => { if (e.button !== 0) return; e.stopPropagation(); onEdgePick(tg); }}>
+                    <title>{t('Añadir aquí la forma elegida')}</title>
+                    <circle cx={px} cy={py} r={8 / k} fill="#fff" stroke="#28a7a1" strokeWidth={2 / k} />
+                    <text x={px} y={py + 4 / k} fontSize={13 / k} textAnchor="middle" fill="#28a7a1" fontWeight={700} style={{ pointerEvents: 'none', userSelect: 'none' }}>+</text>
+                  </g>
+                );
+              });
+            })()}
             {(extraLines || []).map(l => {
               const col = l.kind === 'crease' ? '#2E7D46' : l.kind === 'slot' ? '#9a5b1f' : '#C8102E';
               const on = selLineId === l.id, ls = e => startDrag(e, { type: 'line', lineId: l.id, index: 'body', start: mmPt(e) });
               return (
                 <g key={l.id}>
                   {on && <line x1={l.pts[0][0]} y1={l.pts[0][1]} x2={l.pts[1][0]} y2={l.pts[1][1]} stroke="#1c6ee0" strokeWidth={5} strokeOpacity={0.35} style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />}
-                  <line x1={l.pts[0][0]} y1={l.pts[0][1]} x2={l.pts[1][0]} y2={l.pts[1][1]} stroke={col} strokeWidth={1.5} strokeDasharray={l.kind === 'crease' ? '4 2' : undefined} style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />
+                  <line x1={l.pts[0][0]} y1={l.pts[0][1]} x2={l.pts[1][0]} y2={l.pts[1][1]} stroke={col} strokeWidth={1.5} strokeDasharray={l.kind === 'crease' ? '4 2' : l.kind === 'perf' ? '5 3' : undefined} style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />
                   {onLineDrag && <>
                     <line x1={l.pts[0][0]} y1={l.pts[0][1]} x2={l.pts[1][0]} y2={l.pts[1][1]} stroke="rgba(0,0,0,0.001)" strokeWidth={11 / k} style={{ cursor: 'move' }} onPointerDown={e => { onLineDrag({ phase: 'start', id: l.id }); ls(e); }} />
                     {l.pts.map((p, i) => (
@@ -527,6 +591,7 @@ export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanel
         {view === 'structure' ? (<>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 14, height: 2, background: '#C8102E', display: 'inline-block' }} />{t('Corte')}</span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 14, height: 2, background: '#2E7D46', display: 'inline-block' }} />{t('Pliegue')}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 14, height: 0, borderTop: '2px dashed #C8102E', display: 'inline-block' }} />{t('Punteado')}</span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 14, height: 0, borderTop: '2px dashed #c9a227', display: 'inline-block' }} />{t('Zona segura')}</span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 14, height: 6, background: 'rgba(154,91,31,0.25)', display: 'inline-block' }} />{t('Sangrado')}</span>
         </>) : (<>

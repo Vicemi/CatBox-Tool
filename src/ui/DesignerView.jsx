@@ -6,7 +6,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import {
   IconScissors, IconFold, IconSeparator, IconCopy, IconTrash, IconUnlink, IconFocusCentered, IconStar,
-  IconArrowBarUp, IconArrowBarDown, IconArrowBarLeft, IconArrowBarRight, IconLock, IconWand
+  IconArrowBarUp, IconArrowBarDown, IconArrowBarLeft, IconArrowBarRight, IconLock, IconWand, IconLineDashed, IconPlus
 } from '@tabler/icons-react';
 import { store, useStore } from '../state/store.js';
 import { useT } from '../i18n/index.js';
@@ -16,9 +16,10 @@ import {
   WALL_IDS, WALL_NAMES, BUILD_OPTIONS, LID_WALL_OPTIONS,
   toNetCustom, templateToNet, applyNetPreset, NET_PRESETS, EDGE_OPTIONS, LOCK_TYPES,
   addNetPanel, updateNetPanel, deleteNetPanel, duplicateNetPanel, edgeFree, addLock,
-  mapLocal, addNetLine, updateNetLine, deleteNetLine, wrapCustom
+  mapLocal, addNetLine, updateNetLine, deleteNetLine, wrapCustom,
+  panelEdgeList, BUILDER_SHAPES, attachShape, startFromShape
 } from '../dieline/custom.js';
-import { SHAPE_OPTIONS, FLAP_SHAPES, shapePath } from '../dieline/shapes.js';
+import { SHAPE_OPTIONS, FLAP_SHAPES, shapePath, shapePoints } from '../dieline/shapes.js';
 import { preflightOf, LEVEL_DOT } from '../dieline/checks.js';
 import { MATS, TPLS } from '../dieline/templates.js';
 import { reflowLayersToContainers } from '../design/containers.js';
@@ -26,7 +27,7 @@ import { BoxPreview, boxPreviewContextOf } from '../render3d/BoxPreview.jsx';
 import { makePieces } from '../render3d/fold.js';
 import { exportLaserSVG } from '../export/svg.js';
 import { exportPDF } from '../export/pdf.js';
-import { SheetCanvas } from './SheetCanvas.jsx';
+import { SheetCanvas, SHAPE_MIME } from './SheetCanvas.jsx';
 import { ST, Block, ToggleRow, CmField, MmField, Note, KV, selectSt, btnSt, inputSt } from './widgets.jsx';
 import { fmtCm, fmtMm, SHEETS, sheetOf } from '../units.js';
 import { ask, notify, notifyError } from './dialogs.jsx';
@@ -75,6 +76,41 @@ function ShapeGrid({ items, value, onPick }) {
   );
 }
 
+// Miniatura de una forma de la paleta (cara o solapa), escalada a la casilla.
+function paletteThumb(def) {
+  const w = 40, h = def.kind === 'flap' ? 18 : def.id === 'triangle' ? 34.6 : def.id === 'rect' ? 26 : def.id === 'trapezoid' ? 20 : 40;
+  const pts = shapePoints(def.shape, def.maxW ? 22 : w, h, { hinge: true, n: def.n, corner: def.corner || (def.id === 'trapezoid' ? 8 : undefined), mL: def.kind === 'flap' && !def.maxW ? 45 : 0, mR: def.kind === 'flap' && !def.maxW ? 45 : 0 });
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const x0 = Math.min(...xs), y1 = Math.max(...ys), sc = 26 / Math.max(Math.max(...xs) - x0, y1 - Math.min(...ys), 1);
+  return 'M' + pts.map(p => ((p[0] - x0) * sc + 2).toFixed(1) + ' ' + ((y1 - p[1]) * sc + 2).toFixed(1)).join('L') + 'Z';
+}
+
+// Paleta «Formas y solapas» tipo Photoshop: clic = herramienta activa (luego clic en un borde verde);
+// también se arrastra directamente a un borde del plano. Soltar en vacío crea una pieza nueva.
+function ShapePalette({ armed, active, onArm }) {
+  const t = useT();
+  const tile = def => {
+    const on = armed === def.id, sel = active === def.id;
+    return (
+      <button key={def.id} draggable aria-pressed={on} title={t(def.name)}
+        onDragStart={e => { e.dataTransfer.setData(SHAPE_MIME, def.id); e.dataTransfer.effectAllowed = 'copy'; }}
+        onClick={() => onArm(on ? null : def.id)}
+        style={{ ...btnSt, padding: '4px 2px 3px', cursor: 'grab', border: '1px solid ' + (on ? '#28a7a1' : sel ? '#9a5b1f' : '#e2dac9'), background: on ? '#e3f4f2' : sel ? '#f7efe2' : '#fff' }}>
+        <svg viewBox="0 0 30 30" width="100%" height="26" aria-hidden="true">
+          <path d={paletteThumb(def)} fill={def.kind === 'flap' ? '#efe3cc' : '#f3eee2'} stroke="#211d18" strokeWidth="1.1" strokeLinejoin="round" />
+        </svg>
+        <div style={{ fontSize: 9.5, color: on ? '#1d7a75' : '#5c554a', fontWeight: on || sel ? 700 : 400, lineHeight: 1.2, whiteSpace: 'normal' }}>{t(def.name)}</div>
+      </button>
+    );
+  };
+  return (<>
+    <div style={lbl}>{t('Caras')}</div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 4, marginBottom: 8 }}>{BUILDER_SHAPES.filter(d => d.kind === 'face').map(tile)}</div>
+    <div style={lbl}>{t('Solapas y pestañas')}</div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 4 }}>{BUILDER_SHAPES.filter(d => d.kind === 'flap').map(tile)}</div>
+  </>);
+}
+
 export function DesignerView() {
   const t = useT();
   const s = useStore();
@@ -89,6 +125,8 @@ export function DesignerView() {
   const [addEdge, setAddEdge] = useState('far');
   const [addShape, setAddShape] = useState('wall');
   const [selLine, setSelLine] = useState(null);
+  const [armed, setArmed] = useState(null);        // forma de la paleta armada como herramienta (clic en un borde)
+  const [palShape, setPalShape] = useState('flap'); // forma que ponen los botones «+»
   const [step, setStep] = useState(1);
   const [lockType, setLockType] = useState('slot');
   const [lockLen, setLockLen] = useState(0);
@@ -241,7 +279,46 @@ export function DesignerView() {
   for (const r of lay.roots) walk(r, 0);
   const netPanel = c.panels.find(p => p.id === netSel) || null;
   const netPanelNode = netSel ? lay.byId.get(netSel) : null;
-  const freeEdges = netPanel ? EDGE_OPTIONS.filter(e => edgeFree(c, netPanel.id, e.id)) : [];
+  const edgeLabel = e => t(e.name, { n: e.nameN }) + ' · ' + fmtMm(e.len);
+  const freeEdges = netPanel ? panelEdgeList(netPanel).filter(e => edgeFree(c, netPanel.id, e.id)) : [];
+  // Bordes libres de todas las caras, en coordenadas del plano (para «+», herramienta armada y arrastrar).
+  const LOCAL_EDGE = { far: (n) => [[0, n.h], [n.w, n.h]], near: (n) => [[0, 0], [n.w, 0]], xmin: (n) => [[0, 0], [0, n.h]], xmax: (n) => [[n.w, 0], [n.w, n.h]] };
+  const edgeTargets = isNet ? c.panels.flatMap(p => {
+    const node = lay.byId.get(p.id);
+    if (!node) return [];
+    return panelEdgeList(p).filter(e => edgeFree(c, p.id, e.id)).map(e => {
+      const [a, b] = e.a ? [e.a, e.b] : LOCAL_EDGE[e.id](node);
+      return { key: p.id + '|' + e.id, panelId: p.id, edge: e.id, len: e.len, a: mapLocal(node, ...a), b: mapLocal(node, ...b) };
+    });
+  }) : [];
+  const attachAt = (tg, shapeId) => {
+    const nextCustom = attachShape(c, s, tg.panelId, tg.edge, shapeId);
+    if (nextCustom.panels.length === c.panels.length) return;
+    patchCustom(() => nextCustom);
+    setNetSel(tg.panelId); // la cara madre sigue elegida: así se pueden añadir varias solapas seguidas
+  };
+  const armShape = id => { setArmed(id); if (id) setPalShape(id); };
+  const dropShape = (id, tg, pt) => {
+    setPalShape(id);
+    if (tg) { attachAt(tg, id); return; }
+    // Soltada lejos de un borde: cara nueva como pieza independiente.
+    const def = BUILDER_SHAPES.find(x => x.id === id);
+    if (!def || def.kind !== 'face') { notify(t('Suelta las solapas sobre un borde libre (se marca en verde).')); return; }
+    const piece = startFromShape(c, s, id).panels[0];
+    const nextCustom = normalizeCustom({ ...c, panels: [...c.panels, { ...piece, id: 'p' + (Date.now() % 1e7), name: t(def.name), role: 'design' }] });
+    patchCustom(() => nextCustom, { fitNonce: s.fitNonce + 1 });
+    setNetSel(nextCustom.panels[nextCustom.panels.length - 1].id);
+  };
+  const newFromScratch = async id => {
+    if (c.panels.length > 1 && !(await ask(t('¿Empezar una caja nueva desde cero? Se reemplazan las caras actuales (puedes deshacerlo con Ctrl+Z).')))) return;
+    const nextCustom = startFromShape(c, s, id);
+    store.set(st => ({
+      tpl: 'custom', custom: nextCustom, fitNonce: st.fitNonce + 1,
+      layers: reflowLayersToContainers(st.layers, geomOf(st, m.t), geomOf({ ...st, tpl: 'custom', custom: nextCustom }, m.t))
+    }));
+    setNetSel('p1');
+    setPalShape('flap');
+  };
   // Líneas editables de la cara: las añadidas a mano, más las ranuras y pliegues que ya trae la cara.
   const lineItems = netPanel ? [
     ...(c.lines || []).filter(l => l.panelId === netPanel.id).map(l => ({ key: l.id, src: 'line', kind: l.kind, id: l.id, p: [[l.x1, l.y1], [l.x2, l.y2]] })),
@@ -254,11 +331,14 @@ export function DesignerView() {
   // Sentido en que crece `shift` (desplazamiento a lo largo del borde de unión): siempre +x de la madre en bordes far/near, +y en xmin/xmax.
   const shiftInfo = id => {
     const p = c.panels.find(x => x.id === id), par = p && p.parent ? lay.byId.get(p.parent) : null;
-    return par ? { dir: p.edge === 'far' || p.edge === 'near' ? par.ex : par.ey, shift: p.shift || 0 } : null;
+    // En los lados de un polígono (eN) el desplazamiento crece a lo largo del eje x propio de la hija.
+    return par ? { dir: /^e\d+$/.test(p.edge) ? lay.byId.get(id).ex : p.edge === 'far' || p.edge === 'near' ? par.ex : par.ey, shift: p.shift || 0 } : null;
   };
+  const parentPanel = netPanel && netPanel.parent ? c.panels.find(p => p.id === netPanel.parent) : null;
+  const parentEdges = parentPanel ? panelEdgeList(parentPanel) : [];
   const selFrame = netPanelNode ? {
     id: netPanelNode.id, O: netPanelNode.O, ex: netPanelNode.ex, ey: netPanelNode.ey, w: netPanelNode.w, h: netPanelNode.h,
-    snapW: parentNode ? (netPanel.edge === 'far' || netPanel.edge === 'near' ? parentNode.w : parentNode.h) : null
+    snapW: parentNode ? ((parentEdges.find(e => e.id === netPanel.edge) || {}).len ?? (netPanel.edge === 'far' || netPanel.edge === 'near' ? parentNode.w : parentNode.h)) : null
   } : null;
 
   useEffect(() => {
@@ -269,14 +349,7 @@ export function DesignerView() {
     if (!netPanel) return;
     if (!freeEdges.length) { notify(t('Esta cara ya tiene una unión en todos sus bordes. Elimina una cara o crea otra pieza.')); return; }
     const edge = edgeArg || (freeEdges.some(e => e.id === addEdge) ? addEdge : freeEdges[0].id);
-    let nextCustom = addNetPanel(c, s, netPanel.id, edge, addShape === 'wall' ? 'wall' : 'rect');
-    const added = nextCustom.panels[nextCustom.panels.length - 1];
-    if (added && addShape !== 'wall') {
-      const fs = FLAP_SHAPES.find(x => x.id === addShape) || FLAP_SHAPES[0];
-      nextCustom = updateNetPanel(nextCustom, added.id, { shape: fs.id, h: fs.h, name: fs.name + ' ' + nextCustom.panels.length });
-    }
-    patchCustom(() => nextCustom, { fitNonce: s.fitNonce + 1 });
-    setNetSel(added ? added.id : netPanel.id);
+    attachAt({ panelId: netPanel.id, edge }, palShape);
   };
   const addRoot = () => {
     const nextCustom = addNetPanel(c, s, null, 'far', 'rect');
@@ -393,7 +466,7 @@ export function DesignerView() {
       if (store.get().view !== 'designer') return;
       const tag = (document.activeElement || {}).tagName;
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-      if (e.key === 'Escape') { setSelLine(null); return; }
+      if (e.key === 'Escape') { setSelLine(null); setArmed(null); return; }
       if ((e.metaKey || e.ctrlKey) && /^[zZ]$/.test(e.key)) { e.preventDefault(); if (e.shiftKey) store.redo(); else store.undo(); return; }
       if ((e.metaKey || e.ctrlKey) && /^[yY]$/.test(e.key)) { e.preventDefault(); store.redo(); return; }
       const dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
@@ -413,7 +486,7 @@ export function DesignerView() {
     const patch = { w: v };
     if (p.parent) {
       // Mantiene fijo el lado opuesto: compensa el desplazamiento según cómo reparte el layout el borde.
-      const dw = v - p.w, lowMoves = (which === 'wl') === (p.edge === 'far' || p.edge === 'xmin');
+      const dw = v - p.w, lowMoves = (which === 'wl') === (p.edge === 'far' || p.edge === 'xmin' || /^e\d+$/.test(p.edge));
       const base = p.shift || 0;
       patch.shift = Math.round((p.align === 'start' ? base - (lowMoves ? dw : 0)
         : p.align === 'end' ? base + (lowMoves ? 0 : dw)
@@ -502,6 +575,31 @@ export function DesignerView() {
             : t('Caja paramétrica: cuatro paredes, tapa, solapas y pestañas automáticas.')}
         </div>
       </Block>
+
+      <Block>
+        <ST>{t('Empezar desde cero')}</ST>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 4 }}>
+          {BUILDER_SHAPES.filter(d => d.kind === 'face').map(d => (
+            <button key={d.id} onClick={() => newFromScratch(d.id)} title={t('Base: {name}', { name: t(d.name) })} style={{ ...btnSt, padding: '4px 2px 3px' }}>
+              <svg viewBox="0 0 30 30" width="100%" height="24" aria-hidden="true"><path d={paletteThumb(d)} fill="#f3eee2" stroke="#211d18" strokeWidth="1.1" strokeLinejoin="round" /></svg>
+              <div style={{ fontSize: 9.5, color: '#5c554a', lineHeight: 1.2, whiteSpace: 'normal' }}>{t(d.name)}</div>
+            </button>
+          ))}
+        </div>
+        <div style={{ ...hint, marginTop: 7 }}>{t('Elige la forma de la base y después pega caras y solapas en sus bordes.')}</div>
+      </Block>
+
+      {isNet && (
+        <Block>
+          <ST>{t('Formas y solapas')}</ST>
+          <ShapePalette armed={armed} active={palShape} onArm={armShape} />
+          <div style={{ ...hint, marginTop: 8, lineHeight: 1.6 }}>
+            {armed
+              ? t('Herramienta activa: haz clic en un borde verde del plano para pegarla. Esc para salir.')
+              : t('Arrastra una forma hasta un borde del plano y se pega sola. También puedes elegirla y usar los «+» de la cara seleccionada. Las solapas se recortan en inglete para no pisarse en las esquinas.')}
+          </div>
+        </Block>
+      )}
 
       {!isNet && (<>
         <Block>
@@ -669,7 +767,11 @@ export function DesignerView() {
       panelShiftInfo={isNet ? shiftInfo : undefined}
       onPanelShift={isNet ? shiftPanel : undefined}
       selFrame={isNet ? selFrame : undefined}
-      onPanelResize={isNet ? resizePanel : undefined} />
+      onPanelResize={isNet ? resizePanel : undefined}
+      edgeTargets={isNet ? edgeTargets : undefined}
+      armedShape={isNet ? armed : null}
+      onEdgePick={isNet ? (tg => attachAt(tg, armed || palShape)) : undefined}
+      onShapeDrop={isNet ? dropShape : undefined} />
 
     <div style={{ width: 344, flex: 'none', background: '#faf7f0', borderLeft: '1px solid #ded5c4', overflowY: 'auto' }}>
       <Block style={{ padding: 12 }}>
@@ -761,13 +863,9 @@ export function DesignerView() {
           <ST>{t('Cara seleccionada')}</ST>
           <Tooltip.Provider delayDuration={200}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', marginBottom: 9 }}>
-              {EDGE_OPTIONS.map(o => (
-                <Tool key={o.id} icon={EDGE_ICON[o.id]} tip={t('Añadir {shape} en: {edge}', { shape: t(addShape === 'wall' ? 'Cara / pared' : (FLAP_SHAPES.find(x => x.id === addShape) || {}).name), edge: t(o.name) })}
-                  disabled={!freeEdges.some(e => e.id === o.id)} onClick={() => addChild(o.id)} color="#9a5b1f" />
-              ))}
-              <span style={{ width: 1, height: 20, background: '#e7e0d4', margin: '0 2px' }} />
               <Tool icon={IconScissors} tip={t('Añadir línea de corte')} onClick={() => addLine('cut')} color="#C8102E" />
               <Tool icon={IconFold} tip={t('Añadir línea de pliegue')} onClick={() => addLine('crease')} color="#2E7D46" />
+              <Tool icon={IconLineDashed} tip={t('Añadir línea de punteado (perforación)')} onClick={() => addLine('perf')} color="#C8102E" />
               <Tool icon={IconSeparator} tip={t('Añadir ranura')} onClick={() => addLine('slot')} color="#9a5b1f" />
               <span style={{ width: 1, height: 20, background: '#e7e0d4', margin: '0 2px' }} />
               <Tool icon={IconFocusCentered} tip={selItem ? t('Centrar la línea en la cara') : t('Centrar la cara en su borde')}
@@ -796,10 +894,21 @@ export function DesignerView() {
           </div>
           {netPanel.parent && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, marginBottom: 8 }}>
+              {[['miterL', t('Inglete izq. °')], ['miterR', t('Inglete der. °')]].map(([key, label]) => (
+                <div key={key}>
+                  <div style={lbl}>{label}</div>
+                  <input type="number" min="0" max="85" step="1" value={Math.round((netPanel[key] || 0) * 10) / 10} aria-label={label}
+                    onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) setPanel({ [key]: Math.min(85, Math.max(0, v)) }); }} style={inputSt} />
+                </div>
+              ))}
+            </div>
+          )}
+          {netPanel.parent && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, marginBottom: 8 }}>
               <div>
                 <div style={lbl}>{t('Borde de unión')}</div>
                 <select value={netPanel.edge} onChange={e => changeParentEdge(e.target.value)} style={selectSt}>
-                  {EDGE_OPTIONS.map(o => <option key={o.id} value={o.id}>{t(o.name)}</option>)}
+                  {parentEdges.map(o => <option key={o.id} value={o.id}>{edgeLabel(o)}</option>)}
                 </select>
               </div>
               <div>
@@ -825,7 +934,7 @@ export function DesignerView() {
           )}
           <div style={{ fontSize: 10.5, color: '#8a8071', marginBottom: 8 }}>
             {netPanel.parent
-              ? t('Unida a: {name} · {edge}', { name: t(c.panels.find(p => p.id === netPanel.parent)?.name || netPanel.parent), edge: nameOf(EDGE_OPTIONS, netPanel.edge) })
+              ? t('Unida a: {name} · {edge}', { name: t(parentPanel?.name || netPanel.parent), edge: (() => { const e = parentEdges.find(x => x.id === netPanel.edge); return e ? edgeLabel(e) : nameOf(EDGE_OPTIONS, netPanel.edge); })() })
               : t('Pieza raíz independiente')}
           </div>
 
@@ -835,8 +944,8 @@ export function DesignerView() {
             <div style={{ display: 'grid', gap: 4, marginBottom: 7 }}>
               {lineItems.map(it => (
                 <div key={it.key} onClick={() => setSelLine(it.key === selLine ? null : it.key)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: selLine === it.key ? '#e8f0fc' : '#fff', border: '1px solid ' + (selLine === it.key ? '#1c6ee0' : '#e7e0d4'), borderRadius: 4, padding: '4px 6px', cursor: 'pointer' }}>
-                  <span style={{ width: 7, height: 7, borderRadius: 99, flex: 'none', background: it.kind === 'crease' ? '#2E7D46' : it.kind === 'slot' ? '#9a5b1f' : '#C8102E' }} />
-                  <span style={{ flex: 1, fontSize: 10.5, color: '#5c554a' }}>{it.kind === 'slot' ? t('Ranura') : it.kind === 'crease' ? t('Pliegue') : t('Corte')}{it.src === 'line' ? '' : ' ' + t('(de la cara)')}</span>
+                  <span style={{ width: 7, height: 7, borderRadius: 99, flex: 'none', background: it.kind === 'crease' ? '#2E7D46' : it.kind === 'slot' ? '#9a5b1f' : '#C8102E', outline: it.kind === 'perf' ? '1px dashed #C8102E' : undefined, outlineOffset: 1 }} />
+                  <span style={{ flex: 1, fontSize: 10.5, color: '#5c554a' }}>{it.kind === 'slot' ? t('Ranura') : it.kind === 'crease' ? t('Pliegue') : it.kind === 'perf' ? t('Punteado') : t('Corte')}{it.src === 'line' ? '' : ' ' + t('(de la cara)')}</span>
                   <span onClick={e => { e.stopPropagation(); delItem(it); }} title={t('Eliminar (se puede deshacer con Ctrl+Z)')} style={{ cursor: 'pointer', color: '#c0492b', fontSize: 11 }}>×</span>
                 </div>
               ))}
@@ -917,20 +1026,20 @@ export function DesignerView() {
 
           <div style={{ height: 1, background: '#e7e0d4', margin: '10px 0' }} />
           <ST style={{ marginBottom: 6 }}>{t('Añadir cara o solapa')}</ST>
+          <div style={{ fontSize: 11, color: '#5c554a', marginBottom: 6 }}>
+            {t('Forma activa:')} <b style={{ color: '#9a5b1f' }}>{t((BUILDER_SHAPES.find(d => d.id === palShape) || BUILDER_SHAPES[0]).name)}</b>
+          </div>
           {freeEdges.length ? (
-            <>
-              <div style={lbl}>{t('Forma de la nueva cara o solapa')}</div>
-              <div style={{ marginBottom: 8 }}>
-                <ShapeGrid items={[{ id: 'wall', name: 'Cara / pared' }, ...FLAP_SHAPES.filter(x => x.id !== 'rect')]} value={addShape} onPick={setAddShape} />
-              </div>
-              <div style={lbl}>{t('Borde libre')}</div>
-              <select value={addEdge} onChange={e => setAddEdge(e.target.value)} style={{ ...selectSt, marginBottom: 7 }}>
-                {freeEdges.map(o => <option key={o.id} value={o.id}>{t(o.name)}</option>)}
-              </select>
-              <button onClick={() => addChild()} style={{ ...btnSt, width: '100%', padding: '8px 0', border: '1px solid #9a5b1f', color: '#9a5b1f', fontWeight: 700 }}>{t('+ Añadir al borde')}</button>
-            </>
+            <div style={{ display: 'grid', gap: 4 }}>
+              {freeEdges.map(e => (
+                <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #e7e0d4', borderRadius: 5, background: '#fff', padding: '4px 4px 4px 8px' }}>
+                  <span style={{ flex: 1, fontSize: 11, color: '#3d3830' }}>{edgeLabel(e)}</span>
+                  <button onClick={() => addChild(e.id)} title={t('Añadir la forma activa en este borde')} style={{ ...btnSt, padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 3, border: '1px solid #28a7a1', color: '#1d7a75', fontWeight: 700, fontSize: 11 }}><IconPlus size={13} stroke={2.2} />{t('Añadir')}</button>
+                </div>
+              ))}
+            </div>
           ) : <div style={{ fontSize: 11, color: '#a59a85' }}>{t('Todos los bordes de esta cara ya están ocupados.')}</div>}
-          <div style={{ ...hint, marginTop: 7 }}>{t('La cara hija hereda el ancho del borde. Luego puedes cambiar su ancho, profundidad, silueta y ángulo.')}</div>
+          <div style={{ ...hint, marginTop: 7 }}>{t('La forma toma el largo del borde. Luego puedes cambiar su ancho, profundidad, silueta y ángulo.')}</div>
         </Block>
       )}
 

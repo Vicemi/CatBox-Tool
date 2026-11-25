@@ -125,6 +125,8 @@ export function normalizeCustom(raw) {
       n: p.n > 0 ? clamp(Math.round(num(p.n, 24)), 3, 64) : undefined, // lados de la tapa poligonal ('disc')
       pts: Array.isArray(p.pts) && p.pts.length >= 3 && p.pts.every(q => Array.isArray(q) && Number.isFinite(+q[0]) && Number.isFinite(+q[1])) ? p.pts.map(q => [+q[0], +q[1]]) : undefined,
       corner: clamp(num(p.corner, 0), 0, 200),
+      miterL: p.miterL > 0 ? clamp(num(p.miterL, 0), 0, 85) : undefined, // inglete de los extremos de la solapa (°)
+      miterR: p.miterR > 0 ? clamp(num(p.miterR, 0), 0, 85) : undefined,
       angle: clamp(num(p.angle, 90), 0, 360),
       sign: p.sign === 1 ? 1 : p.sign === -1 ? -1 : undefined,
       zOff: clamp(num(p.zOff, 0), -5, 5),
@@ -154,7 +156,7 @@ export function normalizeCustom(raw) {
   const lines = (Array.isArray(r.lines) ? r.lines : []).filter(l => l && l.panelId && [l.x1, l.y1, l.x2, l.y2].every(Number.isFinite)).map((l, i) => ({
     id: String(l.id || ('l' + i)),
     panelId: String(l.panelId),
-    kind: ['cut', 'crease', 'slot'].includes(l.kind) ? l.kind : 'cut',
+    kind: ['cut', 'crease', 'perf', 'slot'].includes(l.kind) ? l.kind : 'cut',
     x1: +l.x1, y1: +l.y1, x2: +l.x2, y2: +l.y2,
     w: clamp(num(l.w, l.kind === 'slot' ? 1.2 : 0), 0, 20)
   }));
@@ -375,7 +377,7 @@ function layoutPanels(defs, state, t, opts = {}) {
     child.hinge = hinge;
     child.attach = ATTACH_OF_ROT[child.rotZ] || 'b';
     child.edgeOffset = off;
-    child.shapePts = shapePoints(child.shape, child.w, child.h, { corner: child.corner, hinge: true, n: child.n, pts: child.pts });
+    child.shapePts = shapePoints(child.shape, child.w, child.h, { corner: child.corner, hinge: true, n: child.n, pts: child.pts, mL: child.miterL, mR: child.miterR });
     placeChildren(child);
   };
 
@@ -590,6 +592,7 @@ export function genCustom(ctx, state, t) {
     if (!n) continue;
     if (l.kind === 'slot') drawSlot(n, l);
     else if (l.kind === 'crease') ctx.crease([mapLocal(n, l.x1, l.y1), mapLocal(n, l.x2, l.y2)]);
+    else if (l.kind === 'perf') ctx.perf([mapLocal(n, l.x1, l.y1), mapLocal(n, l.x2, l.y2)]);
     else ctx.cut([mapLocal(n, l.x1, l.y1), mapLocal(n, l.x2, l.y2)]);
   }
 
@@ -961,6 +964,108 @@ export function edgeFree(custom, parentId, edge, exceptId) {
   return !(c.panels || []).some(p => p.parent === parentId && p.edge === edge && p.id !== exceptId);
 }
 
+// Siluetas con lados propios: sus bordes son los lados reales del polígono (e0…eN), no los 4 de un rectángulo.
+export const POLY_EDGE_SHAPES = ['triangle', 'rttri', 'poly', 'disc', 'taper', 'glue'];
+const panelLocalPts = p => shapePoints(p.shape, p.w, p.h, { corner: p.corner, hinge: !!p.parent, n: p.n, pts: p.pts, mL: p.miterL, mR: p.miterR });
+
+/**
+ * Bordes a los que se puede unir una cara hija: [{ id, name, len, a, b, angA, angB }].
+ * a/b en coordenadas locales de la cara; angA/angB = ángulo interior (°) en cada extremo.
+ * En una cara hija no se ofrece el borde de bisagra (ya está unido a su madre).
+ */
+export function panelEdgeList(p) {
+  const pts = panelLocalPts(p);
+  const n = pts.length;
+  let area = 0;
+  for (let i = 0; i < n; i++) { const q = pts[(i + 1) % n]; area += pts[i][0] * q[1] - q[0] * pts[i][1]; }
+  const angAt = i => {
+    const a = pts[(i - 1 + n) % n], v = pts[i], b = pts[(i + 1) % n];
+    const u1 = [a[0] - v[0], a[1] - v[1]], u2 = [b[0] - v[0], b[1] - v[1]];
+    const cr = u1[0] * u2[1] - u1[1] * u2[0], dt = u1[0] * u2[0] + u1[1] * u2[1];
+    let ang = Math.atan2(Math.abs(cr), dt) * 180 / Math.PI;
+    if ((area >= 0 ? -cr : cr) < 0) ang = 360 - ang; // vértice reflejo
+    return ang;
+  };
+  if (!POLY_EDGE_SHAPES.includes(p.shape)) {
+    const list = [
+      { id: 'far', name: 'Borde exterior', len: p.w },
+      { id: 'xmin', name: 'Borde izquierdo', len: p.h },
+      { id: 'xmax', name: 'Borde derecho', len: p.h }
+    ];
+    if (!p.parent) list.splice(1, 0, { id: 'near', name: 'Borde inferior', len: p.w });
+    return list.map(e => ({ ...e, angA: 90, angB: 90 }));
+  }
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const a = pts[i], b = pts[(i + 1) % n], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len < 1) continue;
+    if (p.parent && Math.abs(a[1]) < 1e-6 && Math.abs(b[1]) < 1e-6) continue; // bisagra
+    out.push({ id: 'e' + i, name: 'Lado {n}', nameN: out.length + 1, len, a, b, angA: angAt(i), angB: angAt((i + 1) % n) });
+  }
+  return out;
+}
+
+// Paleta del constructor: caras (con su forma propia) y solapas (con inglete automático).
+export const BUILDER_SHAPES = [
+  { id: 'square', kind: 'face', name: 'Cuadrado', shape: 'rect' },
+  { id: 'rect', kind: 'face', name: 'Rectángulo', shape: 'rect' },
+  { id: 'triangle', kind: 'face', name: 'Triángulo', shape: 'triangle' },
+  { id: 'rttri', kind: 'face', name: 'Triángulo rectángulo', shape: 'rttri' },
+  { id: 'trapezoid', kind: 'face', name: 'Trapecio', shape: 'taper' },
+  { id: 'hexagon', kind: 'face', name: 'Hexágono', shape: 'disc', n: 6 },
+  { id: 'octagon', kind: 'face', name: 'Octógono', shape: 'disc', n: 8 },
+  { id: 'flap', kind: 'flap', name: 'Solapa', shape: 'rect', h: 15 },
+  { id: 'tuck', kind: 'flap', name: 'Lengüeta', shape: 'tuck', h: 16 },
+  { id: 'dust', kind: 'flap', name: 'Guardapolvo', shape: 'dust', h: 14 },
+  { id: 'glue', kind: 'flap', name: 'Pegado', shape: 'glue', h: 14 },
+  { id: 'ear', kind: 'flap', name: 'Pestaña de esquina', shape: 'ear', h: 16 },
+  { id: 'round', kind: 'flap', name: 'Solapa redondeada', shape: 'round', h: 18, corner: 6 },
+  { id: 'mushroom', kind: 'flap', name: 'Pestaña de encaje (seta)', shape: 'mushroom', h: 18, maxW: 26 }
+];
+
+// Medidas de una forma de la paleta apoyada en un borde de largo `len`.
+function shapeSize(def, len, state) {
+  const w = Math.max(2, def.maxW ? Math.min(def.maxW, len) : len);
+  if (def.kind === 'flap') return { w, h: def.h };
+  if (def.id === 'square') return { w, h: w };
+  if (def.id === 'rect') return { w, h: Math.max(20, Math.min(state.H || w * 0.6, 3000)) };
+  if (def.id === 'triangle') return { w, h: Math.round(w * Math.sqrt(3) / 2 * 100) / 100 };
+  if (def.id === 'rttri') return { w, h: w };
+  if (def.id === 'trapezoid') return { w, h: Math.round(w * 0.5 * 100) / 100 };
+  return { w, h: w }; // polígonos regulares ('disc'): w = lado
+}
+
+/** Une una forma de la paleta al borde `edge` de `parentId`. Devuelve el custom nuevo (la hija es la última cara). */
+export function attachShape(custom, state, parentId, edge, shapeId) {
+  const c = normalizeCustom(custom);
+  const def = BUILDER_SHAPES.find(x => x.id === shapeId);
+  const parent = c.panels.find(p => p.id === parentId);
+  if (!def || !parent || !edgeFree(c, parentId, edge)) return c;
+  const pe = panelEdgeList(parent).find(e => e.id === edge);
+  if (!pe) return c;
+  const { w, h } = shapeSize(def, pe.len, state);
+  // x = 0 de la hija cae en el extremo b del lado (la bisagra va de b a a), x = w en el extremo a.
+  const bis = ang => Math.max(0, Math.min(80, (180 - ang) / 2));
+  const miter = def.kind === 'flap' && def.id !== 'mushroom' ? { miterL: bis(pe.angB), miterR: bis(pe.angA) } : {};
+  const child = {
+    id: nextPanelId(c), name: def.name + ' ' + (c.panels.length + 1), parent: parentId, edge, w, h,
+    shape: def.shape, n: def.n, corner: def.corner || (def.id === 'trapezoid' ? Math.round(w * 0.2) : 0),
+    angle: 90, role: 'design', ...miter
+  };
+  return normalizeCustom({ ...c, panels: [...c.panels, child] });
+}
+
+/** Red nueva con una sola pieza de la forma elegida (empezar desde cero). */
+export function startFromShape(custom, state, shapeId) {
+  const c = normalizeCustom(custom);
+  const def = BUILDER_SHAPES.find(x => x.id === shapeId && x.kind === 'face') || BUILDER_SHAPES[0];
+  const side = def.shape === 'disc' ? 50 : 100; // tamaño de partida cómodo; luego se ajusta en la cara
+  const { w, h } = def.id === 'rect' ? { w: side, h: 60 } : shapeSize(def, side, { H: 60 });
+  const root = { id: 'p1', name: 'Base', parent: null, edge: 'far', w, h, shape: def.shape, n: def.n,
+    corner: def.id === 'trapezoid' ? Math.round(w * 0.2) : 0, angle: 90, role: 'hero' };
+  return normalizeCustom({ ...c, mode: 'net', wrapStyle: false, panels: [root], lines: [] });
+}
+
 export function addNetPanel(custom, state, parentId, edge, typeId) {
   const c = normalizeCustom(custom);
   const type = PANEL_TYPES.find(x => x.id === typeId) || PANEL_TYPES[0];
@@ -976,7 +1081,8 @@ export function addNetPanel(custom, state, parentId, edge, typeId) {
   }
   const parent = c.panels.find(p => p.id === parentId);
   if (!parent) return c;
-  const edgeLen = (edge === 'far' || edge === 'near') ? parent.w : parent.h;
+  const pe = panelEdgeList(parent).find(e => e.id === edge);
+  const edgeLen = pe ? pe.len : (edge === 'far' || edge === 'near') ? parent.w : parent.h;
   const h = typeId === 'wall' ? Math.max(20, state.H) : type.h > 0 ? type.h : 40;
   return normalizeCustom({
     ...c,
@@ -1007,7 +1113,7 @@ export function addNetLine(custom, panelId, kind = 'cut') {
   const p = c.panels.find(x => x.id === panelId);
   if (!p) return c;
   const line = {
-    id: nextLineId(c), panelId, kind: ['cut', 'crease', 'slot'].includes(kind) ? kind : 'cut',
+    id: nextLineId(c), panelId, kind: ['cut', 'crease', 'perf', 'slot'].includes(kind) ? kind : 'cut',
     x1: p.w * 0.25, y1: p.h * 0.5, x2: p.w * 0.75, y2: p.h * 0.5,
     w: kind === 'slot' ? 1.2 : 0
   };

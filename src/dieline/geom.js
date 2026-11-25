@@ -14,6 +14,8 @@ export function geomOf(s, t) {
   const tr = (pts, bb) => { for (const p of pts) { if (p[0] < bb[0]) bb[0] = p[0]; if (p[1] < bb[1]) bb[1] = p[1]; if (p[0] > bb[2]) bb[2] = p[0]; if (p[1] > bb[3]) bb[3] = p[1]; } };
   const cut = pts => { tr(pts, o.sbb); tr(pts, o.vbb); o.segs.push({ t: 'cut', pts }); };
   const crease = pts => { tr(pts, o.sbb); tr(pts, o.vbb); o.segs.push({ t: 'crease', pts }); };
+  // Punteado / perforación: corte intermitente (capa PUNTEADO en láser y DXF).
+  const perf = pts => { tr(pts, o.sbb); tr(pts, o.vbb); o.segs.push({ t: 'perf', pts }); };
   const fill = pts => { tr(pts, o.sbb); tr(pts, o.vbb); o.fills.push(pts); };
   // panel 用于“板件填充 + 可设计面”同时生成；region 仅登记可设计面，
   // 供已经由模板写入 fills 的主体板复用，避免为了补面板语义重复填充。
@@ -35,7 +37,7 @@ export function geomOf(s, t) {
   const encaje = (pts, meta = {}) => { cut(pts); o.slots.push({ pts, ...meta }); };
   const rect = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
   const fmt = v => Math.round(v * 10) / 10;
-  const ctx = { cut, crease, fill, panel, region, safeR, label, dimH, dimV, q, rect, fmt, encaje };
+  const ctx = { cut, crease, perf, fill, panel, region, safeR, label, dimH, dimV, q, rect, fmt, encaje };
 
   if (s.tpl === 'rte' || s.tpl === 'ste') genTuck(ctx, s, t, s.tpl === 'rte');
   else if (s.tpl === 'mailer') genMailer(ctx, s, t);
@@ -59,11 +61,11 @@ export function geomOf(s, t) {
     if (sg && sg.pts[+ix[1]]) { const q2 = sg.pts[+ix[1]]; q2[0] += pair[1][0]; q2[1] += pair[1][1]; }
   });
   const toPath = ty => o.segs.filter(g => g.t === ty).map(g => 'M' + g.pts.map(p => r2(p[0]) + ' ' + r2(p[1])).join('L')).join(' ');
-  o.cutPath = toPath('cut'); o.creasePath = toPath('crease');
+  o.cutPath = toPath('cut'); o.creasePath = toPath('crease'); o.perfPath = toPath('perf');
   o.fillPath = o.fills.map(pts => 'M' + pts.map(p => r2(p[0]) + ' ' + r2(p[1])).join('L') + 'Z').join(' ');
   o.safePath = o.safes.map(r => 'M' + r2(r[0]) + ' ' + r2(r[1]) + 'h' + r2(r[2]) + 'v' + r2(r[3]) + 'h' + r2(-r[2]) + 'Z').join(' ');
   const len = ty => o.segs.filter(g => g.t === ty).reduce((a, g) => { let l = 0; for (let i = 0; i < g.pts.length - 1; i++) l += Math.hypot(g.pts[i + 1][0] - g.pts[i][0], g.pts[i + 1][1] - g.pts[i][1]); return a + l; }, 0);
-  o.cutLen = len('cut'); o.creaseLen = len('crease');
+  o.cutLen = len('cut'); o.creaseLen = len('crease'); o.perfLen = len('perf');
   o.cutN = o.segs.filter(g => g.t === 'cut').length; o.creaseN = o.segs.filter(g => g.t === 'crease').length;
   o.slotN = o.slots.length;
   o.slotLen = o.slots.reduce((a, sl) => {

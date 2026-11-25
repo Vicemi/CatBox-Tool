@@ -219,13 +219,14 @@ export function StructureView() {
           <Toggle on={s.editMode} onClick={() => store.set(st => ({ editMode: !st.editMode, selSeg: null }))} />
         </div>
         {editOn && (<>
-          <div style={{ fontSize: 11, color: '#8a8071', marginTop: 8, lineHeight: 1.6 }}>{tr('Haz clic en una línea para cambiarla entre corte y pliegue.')} {tr('Líneas modificadas:')} <b style={{ color: '#9a5b1f' }}>{typeOvrCount}</b>.</div>
+          <div style={{ fontSize: 11, color: '#8a8071', marginTop: 8, lineHeight: 1.6 }}>{tr('Haz clic en una línea para cambiarla entre corte, pliegue y punteado.')} {tr('Líneas modificadas:')} <b style={{ color: '#9a5b1f' }}>{typeOvrCount}</b>.</div>
           {selSegOk && (
             <div style={{ marginTop: 9, background: '#f0ebe0', border: '1px solid #e2dac9', borderRadius: 6, padding: '9px 11px' }}>
-              <div style={{ fontSize: 11, color: '#6d6557', marginBottom: 7 }}>{tr('Línea seleccionada')} · {curSegT === 'cut' ? tr('Corte') : tr('Pliegue')}</div>
+              <div style={{ fontSize: 11, color: '#6d6557', marginBottom: 7 }}>{tr('Línea seleccionada')} · {curSegT === 'cut' ? tr('Corte') : curSegT === 'perf' ? tr('Punteado') : tr('Pliegue')}</div>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => store.set(st => ({ typeOvr: { ...st.typeOvr, [st.selSeg]: 'cut' } }))} style={{ ...btnSt, flex: 1, background: curSegT === 'cut' ? '#C8102E' : '#fff', color: curSegT === 'cut' ? '#fff' : '#5c554a' }}>{tr('Corte')}</button>
                 <button onClick={() => store.set(st => ({ typeOvr: { ...st.typeOvr, [st.selSeg]: 'crease' } }))} style={{ ...btnSt, flex: 1, background: curSegT === 'crease' ? '#2E7D46' : '#fff', color: curSegT === 'crease' ? '#fff' : '#5c554a' }}>{tr('Pliegue')}</button>
+                <button onClick={() => store.set(st => ({ typeOvr: { ...st.typeOvr, [st.selSeg]: 'perf' } }))} style={{ ...btnSt, flex: 1, background: curSegT === 'perf' ? '#C8102E' : '#fff', color: curSegT === 'perf' ? '#fff' : '#5c554a', borderStyle: 'dashed' }}>{tr('Punteado')}</button>
               </div>
             </div>
           )}
