@@ -55,7 +55,11 @@ for (const shape of ['asym', 'halfdisc', 'quarter', 'round', 'tuck']) {
   c = editVertex(c, 'p1', 'delete', 1, null);
   assert.equal(c.panels[0].pts.length, 3, 'vertex deleted');
   const lay = customLayout({ ...st, custom: normalizeCustom(c) }, T);
-  assert.ok(lay.byId.get(c.panels[1].id), 'child still placed');
+  const kid = lay.byId.get(c.panels[1].id), par = lay.byId.get('p1');
+  assert.ok(kid, 'child still placed');
+  // The fitted flap follows its side after the base was reshaped (no overhang past the corners).
+  const ei = Number(c.panels[1].edge.slice(1)) % par.shapePts.length, a = par.shapePts[ei], b = par.shapePts[(ei + 1) % par.shapePts.length];
+  assert.ok(Math.abs(kid.w - Math.hypot(b[0] - a[0], b[1] - a[1])) < 1e-6, 'fitted flap width = side length');
   // A child keeps its hinge vertices fixed.
   let d = attachShape(startFromShape(null, st, 'square'), st, 'p1', 'far', 'flap');
   d = toFreeForm(d, d.panels[1].id);

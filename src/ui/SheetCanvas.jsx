@@ -54,7 +54,8 @@ const segDist = (p, a, b) => {
   const u = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2));
   return Math.hypot(p[0] - a[0] - u * dx, p[1] - a[1] - u * dy);
 };
-export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanelClick, extraLines, onLineDrag, selLineId, panelShiftInfo, onPanelShift, selFrame, onPanelResize, edgeTargets, armedShape, onEdgePick, onShapeDrop }) {
+//  · vertexEdit {pts (mundo), fixed[], onMove(i, pt), onInsert(i, pt), onDelete(i)} — forma libre: vértices editables
+export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanelClick, extraLines, onLineDrag, selLineId, panelShiftInfo, onPanelShift, selFrame, onPanelResize, edgeTargets, armedShape, onEdgePick, onShapeDrop, vertexEdit }) {
   const s = useStore();
   const t = useT();
   const elRef = useRef(null);
@@ -183,6 +184,13 @@ export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanel
       if (!e.altKey) { v = Math.abs(v) < 2 / kk ? 0 : r1(v); } // imán al centro del borde; Alt = libre
       onPanelShift && onPanelShift(d.id, v);
       setHud(t('Desplazamiento') + ' ' + fmt1(v) + ' mm' + (v === 0 ? ' · ' + t('centrada') : ''));
+      return;
+    }
+    if (d.type === 'vertex') {
+      let p = mmPt(e);
+      if (!e.altKey) p = [Math.round(p[0] * 2) / 2, Math.round(p[1] * 2) / 2]; // rejilla de 0,5 mm; Alt = libre
+      vertexEdit && vertexEdit.onMove(d.index, p);
+      setHud(t('Vértice') + ' ' + (d.index + 1) + ' · X ' + fmt1(p[0]) + ' · Y ' + fmt1(p[1]) + ' mm');
       return;
     }
     if (d.type === 'line') {
@@ -496,13 +504,36 @@ export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanel
                 </g>
               );
             })()}
-            {selFrame && onPanelResize && highlighted && (() => {
-              // Tiradores sobre los bordes de corte de la cara seleccionada: profundidad (borde libre) y ancho (laterales).
-              const hs = 8 / k, fr = selFrame;
+            {vertexEdit && (() => {
+              // Forma libre: círculo por vértice (arrastrar; doble clic borra), «+» en el centro de cada lado (inserta).
+              const P = vertexEdit.pts, n = P.length;
+              return (
+                <g>
+                  {P.map((p, i) => {
+                    const q = P[(i + 1) % n], mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2;
+                    return (
+                      <g key={'mid' + i} style={{ cursor: 'copy' }} onPointerDown={e => { if (e.button !== 0) return; e.stopPropagation(); vertexEdit.onInsert(i, [mx, my]); }}>
+                        <title>{t('Añadir un vértice en este lado')}</title>
+                        <rect x={mx - 3.5 / k} y={my - 3.5 / k} width={7 / k} height={7 / k} rx={1.5 / k} fill="#fff" stroke="#1d7a75" strokeWidth={1.2 / k} />
+                        <text x={mx} y={my + 2.6 / k} fontSize={8 / k} textAnchor="middle" fill="#1d7a75" style={{ pointerEvents: 'none', userSelect: 'none' }}>+</text>
+                      </g>
+                    );
+                  })}
+                  {P.map((p, i) => vertexEdit.fixed[i]
+                    ? <rect key={'v' + i} x={p[0] - 4 / k} y={p[1] - 4 / k} width={8 / k} height={8 / k} fill="#d8d0c2" stroke="#8a8071" strokeWidth={1.2 / k} style={{ pointerEvents: 'none' }} />
+                    : <circle key={'v' + i} cx={p[0]} cy={p[1]} r={6 / k} fill="#fff" stroke="#1d7a75" strokeWidth={2 / k} style={{ cursor: 'move' }}
+                      onDoubleClick={e => { e.stopPropagation(); vertexEdit.onDelete(i); }}
+                      onPointerDown={e => startDrag(e, { type: 'vertex', index: i })}><title>{t('Arrastra el vértice · doble clic para borrarlo · Alt = sin rejilla')}</title></circle>)}
+                </g>
+              );
+            })()}
+            {selFrame && onPanelResize && highlighted && !selFrame.noResize && (() => {
+              // Tiradores sobre la silueta real de la cara seleccionada: profundidad (punto más lejano) y ancho (extremos).
+              const hs = 8 / k, fr = selFrame, hp = fr.hp || { h: [fr.w / 2, fr.h], wl: [0, fr.h / 2], wr: [fr.w, fr.h / 2] };
               const hdl = [
-                { which: 'h', p: toWorld(fr, fr.w / 2, fr.h), cur: Math.abs(fr.ey[1]) > Math.abs(fr.ey[0]) ? 'ns-resize' : 'ew-resize' },
-                { which: 'wl', p: toWorld(fr, 0, fr.h / 2), cur: Math.abs(fr.ex[0]) > Math.abs(fr.ex[1]) ? 'ew-resize' : 'ns-resize' },
-                { which: 'wr', p: toWorld(fr, fr.w, fr.h / 2), cur: Math.abs(fr.ex[0]) > Math.abs(fr.ex[1]) ? 'ew-resize' : 'ns-resize' }
+                { which: 'h', p: toWorld(fr, ...hp.h), cur: Math.abs(fr.ey[1]) > Math.abs(fr.ey[0]) ? 'ns-resize' : 'ew-resize' },
+                { which: 'wl', p: toWorld(fr, ...hp.wl), cur: Math.abs(fr.ex[0]) > Math.abs(fr.ex[1]) ? 'ew-resize' : 'ns-resize' },
+                { which: 'wr', p: toWorld(fr, ...hp.wr), cur: Math.abs(fr.ex[0]) > Math.abs(fr.ex[1]) ? 'ew-resize' : 'ns-resize' }
               ];
               return hdl.map(hd => (
                 <rect key={hd.which} x={hd.p[0] - hs / 2} y={hd.p[1] - hs / 2} width={hs} height={hs} rx={1.5 / k} fill="#fff" stroke="#C8102E" strokeWidth={1.6 / k}
@@ -530,6 +561,18 @@ export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanel
             {(extraLines || []).map(l => {
               const col = l.kind === 'crease' ? '#2E7D46' : l.kind === 'slot' ? '#9a5b1f' : '#C8102E';
               const on = selLineId === l.id, ls = e => startDrag(e, { type: 'line', lineId: l.id, index: 'body', start: mmPt(e) });
+              if (l.kind === 'hole') {
+                // Agujero circular: se dibuja y arrastra como círculo (su tamaño se cambia con «Diámetro»).
+                const c0 = l.pts[0];
+                return (
+                  <g key={l.id}>
+                    {on && <circle cx={c0[0]} cy={c0[1]} r={l.r} fill="none" stroke="#1c6ee0" strokeWidth={5} strokeOpacity={0.35} style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />}
+                    <circle cx={c0[0]} cy={c0[1]} r={l.r} fill="rgba(200,16,46,0.06)" stroke={col} strokeWidth={1.5} style={{ vectorEffect: 'non-scaling-stroke', cursor: onLineDrag ? 'move' : undefined }}
+                      onPointerDown={onLineDrag ? e => { onLineDrag({ phase: 'start', id: l.id }); ls(e); } : undefined} />
+                    <circle cx={c0[0]} cy={c0[1]} r={2.5 / k} fill={col} style={{ pointerEvents: 'none' }} />
+                  </g>
+                );
+              }
               return (
                 <g key={l.id}>
                   {on && <line x1={l.pts[0][0]} y1={l.pts[0][1]} x2={l.pts[1][0]} y2={l.pts[1][1]} stroke="#1c6ee0" strokeWidth={5} strokeOpacity={0.35} style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />}

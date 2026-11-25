@@ -6,7 +6,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import {
   IconScissors, IconFold, IconSeparator, IconCopy, IconTrash, IconUnlink, IconFocusCentered, IconStar,
-  IconArrowBarUp, IconArrowBarDown, IconArrowBarLeft, IconArrowBarRight, IconLock, IconWand, IconLineDashed, IconPlus
+  IconArrowBarUp, IconArrowBarDown, IconArrowBarLeft, IconArrowBarRight, IconLock, IconWand, IconLineDashed, IconPlus, IconCircle, IconVector
 } from '@tabler/icons-react';
 import { store, useStore } from '../state/store.js';
 import { useT } from '../i18n/index.js';
@@ -17,7 +17,7 @@ import {
   toNetCustom, templateToNet, applyNetPreset, NET_PRESETS, EDGE_OPTIONS, LOCK_TYPES,
   addNetPanel, updateNetPanel, deleteNetPanel, duplicateNetPanel, edgeFree, addLock,
   mapLocal, addNetLine, updateNetLine, deleteNetLine, wrapCustom,
-  panelEdgeList, BUILDER_SHAPES, attachShape, startFromShape
+  panelEdgeList, BUILDER_SHAPES, attachShape, startFromShape, toFreeForm, editVertex
 } from '../dieline/custom.js';
 import { SHAPE_OPTIONS, FLAP_SHAPES, shapePath, shapePoints } from '../dieline/shapes.js';
 import { preflightOf, LEVEL_DOT } from '../dieline/checks.js';
@@ -321,11 +321,20 @@ export function DesignerView() {
   };
   // Líneas editables de la cara: las añadidas a mano, más las ranuras y pliegues que ya trae la cara.
   const lineItems = netPanel ? [
-    ...(c.lines || []).filter(l => l.panelId === netPanel.id).map(l => ({ key: l.id, src: 'line', kind: l.kind, id: l.id, p: [[l.x1, l.y1], [l.x2, l.y2]] })),
-    ...(netPanel.slits || []).map((q, i) => ({ key: 'slit:' + i, src: 'slit', kind: 'slot', i, p: [[q.x1, q.y1], [q.x2, q.y2]] })),
+    ...(c.lines || []).filter(l => l.panelId === netPanel.id).map(l => ({ key: l.id, src: 'line', kind: l.kind, id: l.id, w: l.w, round: l.round, p: [[l.x1, l.y1], [l.x2, l.y2]] })),
+    ...(netPanel.slits || []).map((q, i) => ({ key: 'slit:' + i, src: 'slit', kind: 'slot', i, w: q.w, round: q.round, p: [[q.x1, q.y1], [q.x2, q.y2]] })),
     ...(netPanel.folds || []).map((q, i) => ({ key: 'fold:' + i, src: 'fold', kind: 'crease', i, p: q }))
   ] : [];
-  const lineWorld = netPanelNode ? lineItems.map(it => ({ id: it.key, kind: it.kind, pts: [mapLocal(netPanelNode, ...it.p[0]), mapLocal(netPanelNode, ...it.p[1])] })) : [];
+  const lineWorld = netPanelNode ? lineItems.map(it => ({ id: it.key, kind: it.kind, r: it.kind === 'hole' ? (it.w || 0) / 2 : undefined, pts: [mapLocal(netPanelNode, ...it.p[0]), mapLocal(netPanelNode, ...it.p[1])] })) : [];
+  // Forma libre: vértices editables en el plano (arrastrar, «+» en el centro de un lado para insertar, doble clic para borrar).
+  const vertexEdit = isNet && netPanel && netPanel.shape === 'poly' && netPanel.pts && netPanelNode ? {
+    id: netPanel.id,
+    pts: netPanel.pts.map(q => mapLocal(netPanelNode, q[0], q[1])),
+    fixed: netPanel.pts.map(q => !!netPanel.parent && Math.abs(q[1]) < 1e-6 && (Math.abs(q[0]) < 1e-6 || Math.abs(q[0] - netPanel.w) < 1e-6)),
+    onMove: (i, wp) => patchCustom(cc => editVertex(cc, netPanel.id, 'move', i, localOf(netPanelNode, wp))),
+    onInsert: (i, wp) => patchCustom(cc => editVertex(cc, netPanel.id, 'insert', i, localOf(netPanelNode, wp))),
+    onDelete: i => patchCustom(cc => editVertex(cc, netPanel.id, 'delete', i))
+  } : null;
   const selItem = lineItems.find(it => it.key === selLine) || null;
   const parentNode = netPanel && netPanel.parent ? lay.byId.get(netPanel.parent) : null;
   // Sentido en que crece `shift` (desplazamiento a lo largo del borde de unión): siempre +x de la madre en bordes far/near, +y en xmin/xmax.
@@ -338,7 +347,13 @@ export function DesignerView() {
   const parentEdges = parentPanel ? panelEdgeList(parentPanel) : [];
   const selFrame = netPanelNode ? {
     id: netPanelNode.id, O: netPanelNode.O, ex: netPanelNode.ex, ey: netPanelNode.ey, w: netPanelNode.w, h: netPanelNode.h,
-    snapW: parentNode ? ((parentEdges.find(e => e.id === netPanel.edge) || {}).len ?? (netPanel.edge === 'far' || netPanel.edge === 'near' ? parentNode.w : parentNode.h)) : null
+    snapW: parentNode ? ((parentEdges.find(e => e.id === netPanel.edge) || {}).len ?? (netPanel.edge === 'far' || netPanel.edge === 'near' ? parentNode.w : parentNode.h)) : null,
+    // Tiradores sobre la silueta real: profundidad en el punto más lejano, ancho en los extremos (no en la caja envolvente).
+    hp: (() => {
+      const P = netPanelNode.shapePts || [], ext = (f, pick) => { const v = pick(...P.map(f)), q = P.filter(p => Math.abs(f(p) - v) < 0.01); return [q.reduce((a, p) => a + p[0], 0) / q.length, q.reduce((a, p) => a + p[1], 0) / q.length]; };
+      return P.length ? { h: ext(p => p[1], Math.max), wl: ext(p => p[0], Math.min), wr: ext(p => p[0], Math.max) } : null;
+    })(),
+    noResize: !!vertexEdit
   } : null;
 
   useEffect(() => {
@@ -483,7 +498,7 @@ export function DesignerView() {
     if (!p) return cc;
     v = r1(v);
     if (which === 'h') return updateNetPanel(cc, id, { h: v });
-    const patch = { w: v };
+    const patch = { w: v, fit: undefined }; // ancho fijado a mano: deja de seguir el borde
     if (p.parent) {
       // Mantiene fijo el lado opuesto: compensa el desplazamiento según cómo reparte el layout el borde.
       const dw = v - p.w, lowMoves = (which === 'wl') === (p.edge === 'far' || p.edge === 'xmin' || /^e\d+$/.test(p.edge));
@@ -771,7 +786,8 @@ export function DesignerView() {
       edgeTargets={isNet ? edgeTargets : undefined}
       armedShape={isNet ? armed : null}
       onEdgePick={isNet ? (tg => attachAt(tg, armed || palShape)) : undefined}
-      onShapeDrop={isNet ? dropShape : undefined} />
+      onShapeDrop={isNet ? dropShape : undefined}
+      vertexEdit={vertexEdit} />
 
     <div style={{ width: 344, flex: 'none', background: '#faf7f0', borderLeft: '1px solid #ded5c4', overflowY: 'auto' }}>
       <Block style={{ padding: 12 }}>
@@ -867,6 +883,8 @@ export function DesignerView() {
               <Tool icon={IconFold} tip={t('Añadir línea de pliegue')} onClick={() => addLine('crease')} color="#2E7D46" />
               <Tool icon={IconLineDashed} tip={t('Añadir línea de punteado (perforación)')} onClick={() => addLine('perf')} color="#C8102E" />
               <Tool icon={IconSeparator} tip={t('Añadir ranura')} onClick={() => addLine('slot')} color="#9a5b1f" />
+              <Tool icon={IconCircle} tip={t('Añadir agujero circular')} onClick={() => addLine('hole')} color="#C8102E" />
+              <Tool icon={IconVector} tip={netPanel.shape === 'poly' ? t('Forma libre activa: arrastra los vértices en el plano') : t('Convertir en forma libre (editar vértices)')} active={netPanel.shape === 'poly'} onClick={() => patchCustom(cc => toFreeForm(cc, netPanel.id, netPanelNode && netPanelNode.w))} color="#1d7a75" />
               <span style={{ width: 1, height: 20, background: '#e7e0d4', margin: '0 2px' }} />
               <Tool icon={IconFocusCentered} tip={selItem ? t('Centrar la línea en la cara') : t('Centrar la cara en su borde')}
                 disabled={!selItem && !netPanel.parent}
@@ -882,7 +900,7 @@ export function DesignerView() {
           </Tooltip.Provider>
           <input aria-label={t('Nombre de cara')} value={netPanel.name} onChange={e => setPanel({ name: e.target.value })} style={{ ...inputSt, fontFamily: 'inherit', marginBottom: 8 }} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, marginBottom: 8 }}>
-            <CmField label={t('Ancho bisagra')} mm={netPanel.w} min={2} max={3000} step={0.01} onChange={v => setPanel({ w: v })} />
+            <CmField label={t('Ancho bisagra')} mm={netPanelNode ? netPanelNode.w : netPanel.w} min={2} max={3000} step={0.01} onChange={v => setPanel({ w: v, fit: undefined })} />
             <CmField label={t('Profundidad')} mm={netPanel.h} min={2} max={3000} step={0.01} onChange={v => setPanel({ h: v })} />
           </div>
           <div style={lbl}>{t('Forma de la cara (selector de lengüetas)')}</div>
@@ -892,7 +910,13 @@ export function DesignerView() {
           <div style={{ marginBottom: 8 }}>
             <MmField label={t('Radio/chaflán')} mm={netPanel.corner} min={0} max={200} step={0.5} onChange={v => setPanel({ corner: v })} />
           </div>
-          {netPanel.parent && (
+          {netPanel.shape !== 'poly' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, marginBottom: 8 }}>
+              <MmField label={t('Redondeo esquina izq.')} mm={netPanel.roundL || 0} min={0} max={500} step={0.5} onChange={v => setPanel({ roundL: v })} />
+              <MmField label={t('Redondeo esquina der.')} mm={netPanel.roundR || 0} min={0} max={500} step={0.5} onChange={v => setPanel({ roundR: v })} />
+            </div>
+          )}
+          {netPanel.parent && netPanel.shape !== 'poly' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, marginBottom: 8 }}>
               {[['miterL', t('Inglete izq. °')], ['miterR', t('Inglete der. °')]].map(([key, label]) => (
                 <div key={key}>
@@ -945,7 +969,7 @@ export function DesignerView() {
               {lineItems.map(it => (
                 <div key={it.key} onClick={() => setSelLine(it.key === selLine ? null : it.key)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: selLine === it.key ? '#e8f0fc' : '#fff', border: '1px solid ' + (selLine === it.key ? '#1c6ee0' : '#e7e0d4'), borderRadius: 4, padding: '4px 6px', cursor: 'pointer' }}>
                   <span style={{ width: 7, height: 7, borderRadius: 99, flex: 'none', background: it.kind === 'crease' ? '#2E7D46' : it.kind === 'slot' ? '#9a5b1f' : '#C8102E', outline: it.kind === 'perf' ? '1px dashed #C8102E' : undefined, outlineOffset: 1 }} />
-                  <span style={{ flex: 1, fontSize: 10.5, color: '#5c554a' }}>{it.kind === 'slot' ? t('Ranura') : it.kind === 'crease' ? t('Pliegue') : it.kind === 'perf' ? t('Punteado') : t('Corte')}{it.src === 'line' ? '' : ' ' + t('(de la cara)')}</span>
+                  <span style={{ flex: 1, fontSize: 10.5, color: '#5c554a' }}>{it.kind === 'slot' ? t('Ranura') : it.kind === 'hole' ? t('Agujero circular') : it.kind === 'crease' ? t('Pliegue') : it.kind === 'perf' ? t('Punteado') : t('Corte')}{it.src === 'line' ? '' : ' ' + t('(de la cara)')}</span>
                   <span onClick={e => { e.stopPropagation(); delItem(it); }} title={t('Eliminar (se puede deshacer con Ctrl+Z)')} style={{ cursor: 'pointer', color: '#c0492b', fontSize: 11 }}>×</span>
                 </div>
               ))}
@@ -954,9 +978,9 @@ export function DesignerView() {
           {selItem && (
             <div style={{ background: '#f0ebe0', border: '1px solid #e2dac9', borderRadius: 6, padding: 8, marginBottom: 7 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
-                {[['X1', 0, 0], ['Y1', 0, 1], ['X2', 1, 0], ['Y2', 1, 1]].map(([lb, pi, ci]) => (
+                {(selItem.kind === 'hole' ? [[t('Centro X'), 0, 0], [t('Centro Y'), 0, 1]] : [['X1', 0, 0], ['Y1', 0, 1], ['X2', 1, 0], ['Y2', 1, 1]]).map(([lb, pi, ci]) => (
                   <MmField key={lb} label={lb} mm={selItem.p[pi][ci]} min={0} max={ci ? netPanel.h : netPanel.w} step={0.1}
-                    onChange={v => { const q = selItem.p.map(a => a.slice()); q[pi][ci] = v; setItemPts(selItem.key, q[0], q[1]); }} />
+                    onChange={v => { const q = selItem.p.map(a => a.slice()); q[pi][ci] = v; if (selItem.kind === 'hole') q[1][ci] = v; setItemPts(selItem.key, q[0], q[1]); }} />
                 ))}
               </div>
               {(() => {
@@ -975,10 +999,21 @@ export function DesignerView() {
                   return normalizeCustom({ ...cc, panels: cc.panels.map(p => p.id !== netPanel.id ? p : { ...p, slits: p.slits.map((q, i) => i === selItem.i ? { ...q, w: v } : q) }) });
                 });
                 return (<>
-                  <div style={{ display: 'grid', gridTemplateColumns: selItem.kind === 'slot' ? '1fr 1fr' : '1fr', gap: 6, marginBottom: 6 }}>
-                    <MmField label={t('Largo')} mm={Math.round(len * 100) / 100} min={0.5} max={Math.hypot(netPanel.w, netPanel.h)} step={0.1} onChange={setLen} />
-                    {selItem.kind === 'slot' && <MmField label={t('Ancho ranura')} mm={w0 || 0} min={0} max={20} step={0.1} onChange={setW} />}
-                  </div>
+                  {selItem.kind === 'hole' ? (
+                    <div style={{ marginBottom: 6 }}><MmField label={t('Diámetro')} mm={w0 || 0} min={0.5} max={Math.min(netPanel.w, netPanel.h)} step={0.1} onChange={setW} /></div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: selItem.kind === 'slot' ? '1fr 1fr' : '1fr', gap: 6, marginBottom: 6 }}>
+                      <MmField label={t('Largo')} mm={Math.round(len * 100) / 100} min={0.5} max={Math.hypot(netPanel.w, netPanel.h)} step={0.1} onChange={setLen} />
+                      {selItem.kind === 'slot' && <MmField label={t('Ancho ranura')} mm={w0 || 0} min={0} max={20} step={0.1} onChange={setW} />}
+                    </div>
+                  )}
+                  {selItem.kind === 'slot' && (
+                    <ToggleRow label={t('Extremos redondeados')} on={!!selItem.round} onClick={() => patchCustom(cc => {
+                      const v = !selItem.round || undefined;
+                      if (selItem.src === 'line') return updateNetLine(cc, selItem.id, { round: v });
+                      return normalizeCustom({ ...cc, panels: cc.panels.map(p => p.id !== netPanel.id ? p : { ...p, slits: p.slits.map((q, i) => i === selItem.i ? { ...q, round: v } : q) }) });
+                    })} />
+                  )}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginBottom: 6 }}>
                     <button onClick={() => moveItem(selItem, selItem.p, netPanel.w / 2 - cx, 0)} style={{ ...btnSt, padding: '4px 0', fontSize: 10.5 }}>{t('Centrar ↔ en la cara')}</button>
                     <button onClick={() => moveItem(selItem, selItem.p, 0, netPanel.h / 2 - cy)} style={{ ...btnSt, padding: '4px 0', fontSize: 10.5 }}>{t('Centrar ↕ en la cara')}</button>

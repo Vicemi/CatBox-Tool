@@ -131,6 +131,7 @@ export function normalizeCustom(raw) {
       miterR: p.miterR > 0 ? clamp(num(p.miterR, 0), 0, 85) : undefined,
       roundL: p.roundL > 0 ? clamp(num(p.roundL, 0), 0, 500) : undefined, // radio de las esquinas libres (mm)
       roundR: p.roundR > 0 ? clamp(num(p.roundR, 0), 0, 500) : undefined,
+      fit: p.fit === true || undefined, // el ancho sigue al largo del borde de la madre (si se cambia la madre, la solapa se adapta)
       angle: clamp(num(p.angle, 90), 0, 360),
       sign: p.sign === 1 ? 1 : p.sign === -1 ? -1 : undefined,
       zOff: clamp(num(p.zOff, 0), -5, 5),
@@ -394,6 +395,7 @@ function layoutPanels(defs, state, t, opts = {}) {
       const group = list.filter(ch => ch.edge === edge);
       if (!group.length) continue;
       const edgeLen = edgeLenOf(parent, edge);
+      if (group.length === 1 && group[0].fit) group[0].w = Math.max(0.5, edgeLen);
       const gap = opts.childGap == null ? 0 : opts.childGap;
       const total = group.reduce((a, ch) => a + ch.w, 0) + gap * (group.length - 1);
       let off = (edgeLen - total) / 2;
@@ -1074,7 +1076,7 @@ export function attachShape(custom, state, parentId, edge, shapeId) {
   const child = {
     id: nextPanelId(c), name: def.name + ' ' + (c.panels.length + 1), parent: parentId, edge, w, h,
     shape: def.shape, n: def.n, corner: def.corner || (def.id === 'trapezoid' ? Math.round(w * 0.2) : 0),
-    angle: 90, role: 'design', ...miter
+    angle: 90, role: 'design', fit: !def.maxW || undefined, ...miter
   };
   return normalizeCustom({ ...c, panels: [...c.panels, child] });
 }
@@ -1083,12 +1085,13 @@ export function attachShape(custom, state, parentId, edge, shapeId) {
  * Convierte una cara en «forma libre»: su contorno actual (con ingletes y redondeos ya aplicados) pasa a ser
  * una lista de vértices editables. Las hijas unidas a lados poligonales siguen en el mismo índice de lado.
  */
-export function toFreeForm(custom, id) {
+export function toFreeForm(custom, id, wNow) {
   const c = normalizeCustom(custom);
   const p = c.panels.find(x => x.id === id);
   if (!p || p.shape === 'poly') return c;
-  const pts = panelLocalPts(p).map(q => [Math.round(q[0] * 1000) / 1000, Math.round(q[1] * 1000) / 1000]);
-  return updateNetPanel(c, id, { shape: 'poly', pts, miterL: undefined, miterR: undefined, roundL: undefined, roundR: undefined });
+  const w = wNow > 0 ? wNow : p.w; // ancho real en el plano (una solapa ajustada al borde puede diferir del guardado)
+  const pts = panelLocalPts({ ...p, w }).map(q => [Math.round(q[0] * 1000) / 1000, Math.round(q[1] * 1000) / 1000]);
+  return updateNetPanel(c, id, { shape: 'poly', pts, w, fit: undefined, miterL: undefined, miterR: undefined, roundL: undefined, roundR: undefined });
 }
 
 /**
