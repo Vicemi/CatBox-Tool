@@ -10,7 +10,7 @@ export const layerNameOf = l => {
 
 export const BLENDS = [['normal', 'Normal'], ['multiply', 'Multiplicar'], ['screen', 'Trama'], ['overlay', 'Superponer'], ['darken', 'Oscurecer'], ['lighten', 'Aclarar'], ['soft-light', 'Luz suave'], ['hard-light', 'Luz fuerte'], ['difference', 'Diferencia']];
 export const FONTS = ['Noto Sans', 'Noto Serif', 'JetBrains Mono', 'Tomcat'];
-export const SHAPES = ['rect', 'ellipse', 'triangle', 'polygon', 'star', 'line'];
+export const SHAPES = ['rect', 'ellipse', 'triangle', 'polygon', 'star', 'line', 'poly'];
 
 // Medición real del texto (canvas) con caché; sin DOM (tests) cae a una estimación por carácter.
 let mctx = null;
@@ -56,6 +56,7 @@ export function shapePathD(l) {
   const x = l.x, y = l.y, w = l.w, h = l.h, kind = l.shape || 'rect', f = v => Math.round(v * 1000) / 1000;
   const poly = pts => 'M' + pts.map(p => f(p[0]) + ' ' + f(p[1])).join('L') + 'Z';
   const cx = x + w / 2, cy = y + h / 2;
+  if (kind === 'poly' && l.poly && l.poly.length > 2) return poly(l.poly.map(p => [x + p[0] * w, y + p[1] * h])); // contorno de una cara: puntos normalizados a la caja
   if (kind === 'line') return 'M' + f(x) + ' ' + f(cy) + 'L' + f(x + w) + ' ' + f(cy);
   if (kind === 'ellipse') return 'M' + f(x) + ' ' + f(cy) + 'A' + f(w / 2) + ' ' + f(h / 2) + ' 0 1 0 ' + f(x + w) + ' ' + f(cy) + 'A' + f(w / 2) + ' ' + f(h / 2) + ' 0 1 0 ' + f(x) + ' ' + f(cy) + 'Z';
   if (kind === 'triangle') return poly([[cx, y], [x + w, y + h], [x, y + h]]);
@@ -72,7 +73,37 @@ export function shapePathD(l) {
   return 'M' + f(x + r) + ' ' + f(y) + 'H' + f(x + w - r) + 'A' + f(r) + ' ' + f(r) + ' 0 0 1 ' + f(x + w) + ' ' + f(y + r) + 'V' + f(y + h - r) + 'A' + f(r) + ' ' + f(r) + ' 0 0 1 ' + f(x + w - r) + ' ' + f(y + h) + 'H' + f(x + r) + 'A' + f(r) + ' ' + f(r) + ' 0 0 1 ' + f(x) + ' ' + f(y + h - r) + 'V' + f(y + r) + 'A' + f(r) + ' ' + f(r) + ' 0 0 1 ' + f(x + r) + ' ' + f(y) + 'Z';
 }
 // Firma de estilo de una capa: BoxPreview.bakeKey (render3d) debe incluirla para re-hornear el 3D al cambiar estos campos.
-export const layerStyleKey = l => [l.blend, l.flipX, l.flipY, l.shape, l.stroke, l.strokeW, l.radius, l.sides, l.innerR, l.fillOn, l.italic, l.letterSpacing, l.lineHeight, l.align].join('|');
+export const layerStyleKey = l => [l.blend, l.flipX, l.flipY, l.shape, l.stroke, l.strokeW, l.radius, l.sides, l.innerR, l.fillOn, l.italic, l.letterSpacing, l.lineHeight, l.align, JSON.stringify([l.grad, l.shadow, l.tStroke, l.tStrokeW, l.poly, l.clipMask])].join('|');
+
+// —— Degradados, sombras y máscaras (compartidos por el lienzo SVG, el horneado 3D y el PDF) ——
+export const gradStops = (gr, base) => ((gr && gr.stops && gr.stops.length > 1 ? gr.stops : [[0, base || '#9a5b1f'], [1, '#ffffff']]).slice().sort((a, b) => a[0] - b[0]));
+// Geometría del degradado en mm sobre la caja b=[x,y,w,h]: lineal por ángulo (0° = izquierda→derecha) o radial desde el centro.
+export function gradGeom(gr, b) {
+  const cx = b[0] + b[2] / 2, cy = b[1] + b[3] / 2;
+  if (gr.type === 'radial') return { t: 'radial', cx, cy, r: Math.max(b[2], b[3], 1e-3) / 2 };
+  const a = (gr.angle || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), hl = Math.max(1e-3, (Math.abs(b[2] * c) + Math.abs(b[3] * s)) / 2);
+  return { t: 'linear', x1: cx - c * hl, y1: cy - s * hl, x2: cx + c * hl, y2: cy + s * hl };
+}
+export function canvasGrad(ctx, gr, b, sc, base) {
+  const q = gradGeom(gr, b);
+  const cg = q.t === 'radial' ? ctx.createRadialGradient(q.cx * sc, q.cy * sc, 0, q.cx * sc, q.cy * sc, q.r * sc) : ctx.createLinearGradient(q.x1 * sc, q.y1 * sc, q.x2 * sc, q.y2 * sc);
+  gradStops(gr, base).forEach(st => cg.addColorStop(Math.min(1, Math.max(0, st[0])), st[1]));
+  return cg;
+}
+export function rgbaOf(hex, a) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || ''), n = m ? parseInt(m[1], 16) : 0;
+  return 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + (a == null ? 1 : a) + ')';
+}
+// Instantánea de la forma de una capa (para «recortar con la capa de abajo»): se guarda dentro de la capa recortada,
+// así drawLayer no necesita ver el resto de la pila.
+export function clipMaskOf(b) {
+  const bb = bboxOf(b), isShape = b.kind === 'shape' && b.shape !== 'line';
+  return isShape
+    ? { shape: b.shape || 'rect', x: b.x, y: b.y, w: b.w, h: b.h, poly: b.poly, radius: b.radius, sides: b.sides, innerR: b.innerR, rot: b.rot || 0, flipX: !!b.flipX, flipY: !!b.flipY }
+    : { shape: 'rect', x: bb[0], y: bb[1], w: bb[2], h: bb[3], rot: b.rot || 0, flipX: !!b.flipX, flipY: !!b.flipY };
+}
+export const sameMask = (a, c) => JSON.stringify(a) === JSON.stringify(c);
+export const hasShadow = l => !!(l.shadow && l.shadow.opacity !== 0 && (l.shadow.x || l.shadow.y || l.shadow.blur));
 
 export function dpiOf(l) {
   if (l.kind !== 'image' || !l.pxw) return 0;
@@ -137,6 +168,14 @@ export function drawLayer(ctx, l, sc, fill, clipPts) {
     clipPts.forEach((p, i) => i ? ctx.lineTo(p[0] * sc, p[1] * sc) : ctx.moveTo(p[0] * sc, p[1] * sc));
     ctx.closePath(); ctx.clip();
   }
+  if (l.clipMask) { // recortada con la capa de abajo: el clip sobrevive a setTransform
+    const cm = l.clipMask, m0 = ctx.getTransform();
+    if (cm.rot || cm.flipX || cm.flipY) {
+      const mx = (cm.x + cm.w / 2) * sc, my = (cm.y + cm.h / 2) * sc;
+      ctx.translate(mx, my); if (cm.rot) ctx.rotate(cm.rot * Math.PI / 180); if (cm.flipX || cm.flipY) ctx.scale(cm.flipX ? -1 : 1, cm.flipY ? -1 : 1); ctx.translate(-mx, -my);
+    }
+    ctx.scale(sc, sc); ctx.clip(new Path2D(shapePathD(cm))); ctx.setTransform(m0);
+  }
   ctx.globalAlpha = l.opacity == null ? 1 : l.opacity;
   if (!fill && l.blend && l.blend !== 'normal') ctx.globalCompositeOperation = l.blend; // los canales de acabado son máscaras: sin mezcla
   if (l.rot || l.flipX || l.flipY) {
@@ -146,6 +185,9 @@ export function drawLayer(ctx, l, sc, fill, clipPts) {
     if (l.flipX || l.flipY) ctx.scale(l.flipX ? -1 : 1, l.flipY ? -1 : 1);
     ctx.translate(-rcx, -rcy);
   }
+  // Sombra (offset/blur en mm; no gira con la capa) solo en el color: los canales de acabado son máscaras.
+  const shadowOn = () => { if (!fill && hasShadow(l)) { const sh = l.shadow; ctx.shadowColor = rgbaOf(sh.color || '#000000', sh.opacity == null ? 0.4 : sh.opacity); ctx.shadowBlur = (sh.blur || 0) * sc; ctx.shadowOffsetX = (sh.x || 0) * sc; ctx.shadowOffsetY = (sh.y || 0) * sc; } };
+  const shadowOff = () => { ctx.shadowColor = 'rgba(0,0,0,0)'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0; };
   const finishColor = l.finish === 'foil' ? '#C9A227' : l.finish === 'silver' ? '#B8BAC4' : null;
   if (l.kind === 'text') {
     const sx = l.scaleX == null ? 1 : l.scaleX, sy = l.scaleY == null ? 1 : l.scaleY, m = textMetrics(l);
@@ -159,13 +201,23 @@ export function drawLayer(ctx, l, sc, fill, clipPts) {
     const emb = !fill && l.finish === 'emboss';
     if (fill) ctx.fillStyle = fill;
     else if (emb) { ctx.strokeStyle = '#b8b0a0'; ctx.lineWidth = sc * 0.15; }
-    else ctx.fillStyle = finishColor || l.color || '#211d18';
-    m.lines.forEach((ln, i) => { const yy = (l.y + i * l.size * m.lh) * sc; if (emb) ctx.strokeText(ln, m.ax * sc, yy); else ctx.fillText(ln, m.ax * sc, yy); });
+    else ctx.fillStyle = !finishColor && l.grad ? canvasGrad(ctx, l.grad, [l.x - m.w0 / 2, m.cy - m.h0 / 2, m.w0, m.h0], sc, l.color) : finishColor || l.color || '#211d18';
+    const outer = !fill && !emb && l.tStrokeW > 0, each = fn => m.lines.forEach((ln, i) => fn(ln, m.ax * sc, (l.y + i * l.size * m.lh) * sc));
+    if (outer) { // contorno exterior: se dibuja debajo del relleno con el doble de grosor
+      ctx.save(); ctx.strokeStyle = l.tStroke || '#ffffff'; ctx.lineWidth = 2 * l.tStrokeW * sc; ctx.lineJoin = 'round'; ctx.miterLimit = 2;
+      shadowOn(); each((ln, x, y) => ctx.strokeText(ln, x, y)); ctx.restore();
+    } else shadowOn();
+    each((ln, x, y) => { if (emb) ctx.strokeText(ln, x, y); else ctx.fillText(ln, x, y); });
   } else if (l.kind === 'shape') {
     const p = new Path2D(shapePathD(l)), line = l.shape === 'line', sw = line ? (l.strokeW == null ? 0.8 : l.strokeW) : (l.strokeW || 0);
     ctx.save(); ctx.scale(sc, sc);
-    if (!line && l.fillOn !== false) { ctx.fillStyle = fill || (l.finish === 'emboss' ? 'rgba(33,29,24,0.12)' : finishColor || l.color || '#211d18'); ctx.fill(p); }
-    if (sw > 0) { ctx.lineWidth = sw; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.strokeStyle = fill || finishColor || (line ? l.stroke || l.color : l.stroke) || '#211d18'; ctx.stroke(p); }
+    const doFill = !line && l.fillOn !== false;
+    if (doFill) {
+      ctx.fillStyle = fill || (l.finish === 'emboss' ? 'rgba(33,29,24,0.12)' : finishColor || (l.grad ? canvasGrad(ctx, l.grad, [l.x, l.y, l.w, l.h], 1, l.color) : l.color) || '#211d18');
+      shadowOn(); ctx.fill(p); shadowOff();
+    }
+    if (sw > 0) {
+      if (!doFill) shadowOn(); ctx.lineWidth = sw; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.strokeStyle = fill || finishColor || (line ? l.stroke || l.color : l.stroke) || '#211d18'; ctx.stroke(p); }
     ctx.restore();
   } else if (l.img) {
     const cr = l.crop || [0, 0, 1, 1];
@@ -183,7 +235,7 @@ export function drawLayer(ctx, l, sc, fill, clipPts) {
       tg.drawImage(craftMaskOf(l.img), sx, sy, sw, sh, 0, 0, t.width, t.height);
       ctx.drawImage(t, dx, dy, dw, dh);
     } else {
-      ctx.drawImage(l.img, sx, sy, sw, sh, dx, dy, dw, dh);
+      shadowOn(); ctx.drawImage(l.img, sx, sy, sw, sh, dx, dy, dw, dh);
     }
   } else if (fill) {
     ctx.fillStyle = fill; ctx.fillRect(l.x * sc, l.y * sc, l.w * sc, l.h * sc);

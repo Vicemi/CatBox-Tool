@@ -4,10 +4,11 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { store, useStore } from '../state/store.js';
 import { asset } from '../asset.js';
-import { bboxOf, rotBBox, textMetrics, shapePathD, drawLayer } from '../design/layers.js';
-import { bboxOfPts, containerAt, containerOfLayer, heroContainerOf, clipPtsOf } from '../design/containers.js';
+import { bboxOf, rotBBox, textMetrics, shapePathD, drawLayer, gradGeom, gradStops, hasShadow } from '../design/layers.js';
+import { polyCentroid } from '../design/faces.js';
+import { bboxOfPts, containerAt, containerOfLayer, containerById, heroContainerOf, clipPtsOf } from '../design/containers.js';
 import { dstore, useD, selIdsOf, setSel, setTool } from '../design/ui.js';
-import { moveBy, dupLayers, delLayers, copyLayers, pasteLayers, mapLayers } from '../design/ops.js';
+import { moveBy, dupLayers, delLayers, copyLayers, pasteLayers, mapLayers, xformLayers } from '../design/ops.js';
 import { useT } from '../i18n/index.js';
 
 const r1 = v => Math.round(v * 10) / 10;
@@ -17,6 +18,7 @@ const MONO = "'JetBrains Mono',monospace";
 const tickStep = k => [0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000].find(v => v * k >= 70) || 1000;
 const hex2 = v => Math.round(v).toString(16).padStart(2, '0');
 const union = bs => bs.reduce((a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[0] + b[2]), Math.max(a[3], b[1] + b[3])], [Infinity, Infinity, -Infinity, -Infinity]);
+const rfTf = (rot, fx, fy, cx, cy) => (rot ? 'rotate(' + rot + ' ' + cx + ' ' + cy + ')' : '') + (fx || fy ? ' translate(' + cx + ' ' + cy + ') scale(' + (fx ? -1 : 1) + ' ' + (fy ? -1 : 1) + ') translate(' + (-cx) + ' ' + (-cy) + ')' : '');
 const SHAPE_LABELS = { rect: 'Rectángulo', round: 'Rectángulo redondeado', ellipse: 'Elipse', triangle: 'Triángulo', polygon: 'Polígono', star: 'Estrella', line: 'Línea' };
 
 function Rulers({ k, tx, ty, w, h, cur, onNew }) {
@@ -88,6 +90,7 @@ export function DesignCanvas({ g, onImageDrop }) {
   const ids = selIdsOf(s, d);
   const selLayers = ids.map(id => s.layers.find(l => l.id === id)).filter(l => l && l.visible);
   const single = selLayers.length === 1 ? selLayers[0] : null;
+  const faceHi = (single && containerOfLayer(g, single)) || containerById(g, d.face), faceC = faceHi ? polyCentroid(faceHi.pts) : null;
   const hasImageDrag = e => Array.from((e.dataTransfer && e.dataTransfer.items) || []).some(it => it.kind === 'file' && /^image\/(png|jpeg|webp)$/i.test(it.type));
 
   const mmPt = e => {
@@ -187,6 +190,7 @@ export function DesignCanvas({ g, onImageDrop }) {
       vT.push(x0, (x0 + x1) / 2, x1); hT.push(y0, (y0 + y1) / 2, y1);
       const mg = Math.min(3, (x1 - x0) / 4, (y1 - y0) / 4);
       vT.push(x0 + mg, x1 - mg); hT.push(y0 + mg, y1 - mg);
+      const fc = polyCentroid(panel.pts); vT.push(fc[0]); hT.push(fc[1]); // el centroide también imanta (centrar sobre un triángulo)
     });
     s.layers.forEach(o => { if (excl.includes(o.id) || !o.visible) return; const ob = rotBBox(o); vT.push(ob[0], ob[0] + ob[2] / 2, ob[0] + ob[2]); hT.push(ob[1], ob[1] + ob[3] / 2, ob[1] + ob[3]); });
     return { v: vT, h: hT };
@@ -268,6 +272,7 @@ export function DesignCanvas({ g, onImageDrop }) {
     }
     // move: pulsar en vacío = marquesina (Shift añade a la selección)
     if (!e.shiftKey) setSel([]);
+    { const hit = containerAt(g, p); dstore.set({ face: hit ? hit.panelId : null }); }
     drag.current = { type: 'marquee', start: p, base: e.shiftKey ? ids : [] };
   };
   const newGuide = (e, axis) => {
@@ -299,6 +304,26 @@ export function DesignCanvas({ g, onImageDrop }) {
       rot = ((Math.round(rot * 10) / 10) % 360 + 360) % 360;
       setHud(fmt1(rot) + '°');
       store.set(st => ({ layers: st.layers.map(l => l.id === dd.id ? { ...l, rot, heroPreset: undefined } : l) }));
+      return;
+    }
+    if (dd.type === 'grot') {
+      const p = mmPt(e); let da = (Math.atan2(p[1] - dd.cy, p[0] - dd.cx) - dd.a0) * 180 / Math.PI;
+      if (e.shiftKey) da = Math.round(da / 15) * 15; else if (!e.altKey) { const q = Math.round(da / 90) * 90; if (Math.abs(da - q) < 4) da = q; }
+      setHud(fmt1(da) + '°');
+      const out = xformLayers(dd.orig, dd.cx, dd.cy, 1, 1, da);
+      store.set(st => ({ layers: st.layers.map(l => out[l.id] || l) }));
+      return;
+    }
+    if (dd.type === 'gresize') {
+      const dx = (e.clientX - dd.sx) / kk, dy = (e.clientY - dd.sy) / kk, m = dd.mode, W = dd.ub[2] - dd.ub[0], H = dd.ub[3] - dd.ub[1];
+      let sx = m.includes('e') ? (W + dx) / W : m.includes('w') ? (W - dx) / W : 1, sy = m.includes('s') ? (H + dy) / H : m.includes('n') ? (H - dy) / H : 1;
+      if (m.length === 2) { const f = Math.abs(sx - 1) >= Math.abs(sy - 1) ? sx : sy; sx = sy = f; } // esquina: proporcional
+      else if (e.shiftKey) { const f = m === 'e' || m === 'w' ? sx : sy; sx = sy = f; }
+      sx = Math.max(0.05, sx); sy = Math.max(0.05, sy);
+      const px = m.includes('e') ? dd.ub[0] : m.includes('w') ? dd.ub[2] : (dd.ub[0] + dd.ub[2]) / 2, py = m.includes('s') ? dd.ub[1] : m.includes('n') ? dd.ub[3] : (dd.ub[1] + dd.ub[3]) / 2;
+      setHud(fmt1(W * sx) + ' × ' + fmt1(H * sy) + ' mm');
+      const out = xformLayers(dd.orig, px, py, sx, sy, 0);
+      store.set(st => ({ layers: st.layers.map(l => out[l.id] || l) }));
       return;
     }
     if (dd.type === 'move') {
@@ -446,6 +471,7 @@ export function DesignCanvas({ g, onImageDrop }) {
     else if (l.finish === 'silver') fill = 'url(#silvG)';
     else if (l.finish === 'holo') fill = 'url(#holoG)';
     else if (l.finish === 'emboss') { fill = 'rgba(33,29,24,0.12)'; stroke = 'rgba(33,29,24,0.4)'; }
+    else if (l.grad && l.kind !== 'image' && !isDraft) fill = 'url(#gr-' + l.id + ')';
     const cx = b[0] + b[2] / 2, cy = b[1] + b[3] / 2;
     const tf = (l.rot ? 'rotate(' + l.rot + ' ' + cx + ' ' + cy + ')' : '') + (l.flipX || l.flipY ? ' translate(' + cx + ' ' + cy + ') scale(' + (l.flipX ? -1 : 1) + ' ' + (l.flipY ? -1 : 1) + ') translate(' + (-cx) + ' ' + (-cy) + ')' : '');
     const op = l.opacity == null ? 1 : l.opacity;
@@ -482,7 +508,7 @@ export function DesignCanvas({ g, onImageDrop }) {
         <g key={l.id} onPointerDown={down} onDoubleClick={isDraft || l.locked ? undefined : () => { setSel([l.id]); setEditing({ id: l.id }); }} style={{ cursor: curs }}>
           <g transform={'translate(' + cx + ' ' + cy + ') scale(' + sx + ' ' + sy + ') translate(' + (-cx) + ' ' + (-cy) + ')'}>
             <rect x={l.x - m.w0 / 2} y={m.cy - m.h0 / 2} width={m.w0} height={m.h0} fill="transparent" />
-            <text x={m.ax} y={l.y} fontSize={l.size} textAnchor={m.anchor} fill={fill} stroke={stroke} strokeWidth={0.25} letterSpacing={l.letterSpacing || undefined}
+            <text x={m.ax} y={l.y} fontSize={l.size} textAnchor={m.anchor} fill={fill} stroke={l.tStrokeW > 0 && l.finish !== 'emboss' ? l.tStroke || '#ffffff' : stroke} strokeWidth={l.tStrokeW > 0 && l.finish !== 'emboss' ? l.tStrokeW * 2 : 0.25} paintOrder="stroke" strokeLinejoin="round" letterSpacing={l.letterSpacing || undefined}
               style={{ fontFamily: "'" + (l.font || 'Noto Sans') + "',sans-serif", fontWeight: l.weight, fontStyle: l.italic ? 'italic' : 'normal', userSelect: 'none' }}>
               {m.lines.map((ln, i) => <tspan key={i} x={m.ax} dy={i ? l.size * m.lh : 0}>{ln || '​'}</tspan>)}
             </text>
@@ -493,8 +519,8 @@ export function DesignCanvas({ g, onImageDrop }) {
     const panel = containerOfLayer(g, l);
     const clipId = panel ? 'design-panel-' + String(panel.panelId).replace(/[^a-zA-Z0-9_-]/g, '-') : '';
     return (
-      <g key={isDraft ? 'draft' : l.id} clipPath={clipId ? 'url(#' + clipId + ')' : undefined} style={l.blend && l.blend !== 'normal' ? { mixBlendMode: l.blend } : undefined}>
-        <g transform={tf || undefined} opacity={op}>{els}</g>
+      <g key={isDraft ? 'draft' : l.id} clipPath={clipId ? 'url(#' + clipId + ')' : undefined} filter={!isDraft && hasShadow(l) ? 'url(#sh-' + l.id + ')' : undefined} style={l.blend && l.blend !== 'normal' ? { mixBlendMode: l.blend } : undefined}>
+        <g clipPath={l.clipMask && !isDraft ? 'url(#cm-' + l.id + ')' : undefined}><g transform={tf || undefined} opacity={op}>{els}</g></g>
         {l.finish === 'uv' && <rect x={b[0] - 1} y={b[1] - 1} width={b[2] + 2} height={b[3] + 2} fill="none" stroke="#5a9bc4" strokeWidth={1} strokeDasharray="4 3" style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} transform={tf || undefined} />}
         {l.finish === 'gloss' && <rect x={b[0] - 1} y={b[1] - 1} width={b[2] + 2} height={b[3] + 2} fill="none" stroke="#28a7a1" strokeWidth={1} strokeDasharray="7 2 1 2" style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} transform={tf || undefined} />}
       </g>
@@ -510,7 +536,15 @@ export function DesignCanvas({ g, onImageDrop }) {
     });
     if (selLayers.length > 1) {
       const ub = union(selLayers.map(rotBBox));
-      return <g>{outlines}<rect x={ub[0]} y={ub[1]} width={ub[2] - ub[0]} height={ub[3] - ub[1]} fill="none" stroke="#9a5b1f" strokeWidth={1.2} style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} /></g>;
+      const hs = 7 / k, gcx = (ub[0] + ub[2]) / 2, gcy = (ub[1] + ub[3]) / 2, cu = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize' };
+      const gp = mo => [mo.includes('w') ? ub[0] : mo.includes('e') ? ub[2] : gcx, mo.includes('n') ? ub[1] : mo.includes('s') ? ub[3] : gcy];
+      const orig = selLayers.map(l => ({ ...l })), rp = [gcx, ub[1] - 14 / k];
+      return <g>{outlines}<rect x={ub[0]} y={ub[1]} width={ub[2] - ub[0]} height={ub[3] - ub[1]} fill="none" stroke="#9a5b1f" strokeWidth={1.2} style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />
+        {tool === 'move' && <g data-group-handles>
+          {Object.keys(cu).map(mo => { const p = gp(mo); return <rect key={mo} data-gh={mo} x={p[0] - hs / 2} y={p[1] - hs / 2} width={hs} height={hs} fill="#fff" stroke="#9a5b1f" strokeWidth={1.2 / k} style={{ cursor: cu[mo] }} onPointerDown={e => startDrag(e, { type: 'gresize', mode: mo, ub, orig, sx: e.clientX, sy: e.clientY })} />; })}
+          <line x1={gcx} y1={ub[1]} x2={rp[0]} y2={rp[1]} stroke="#9a5b1f" strokeWidth={1 / k} />
+          <circle data-gh="rot" cx={rp[0]} cy={rp[1]} r={4.5 / k} fill="#9a5b1f" stroke="#fff" strokeWidth={1.2 / k} style={{ cursor: 'crosshair' }} onPointerDown={e => { const p = mmPt(e); startDrag(e, { type: 'grot', cx: gcx, cy: gcy, a0: Math.atan2(p[1] - gcy, p[0] - gcx), orig }); }} />
+        </g>}</g>;
     }
     const sel = single;
     if (sel.locked || tool !== 'move' || (editing && editing.id === sel.id)) return <g>{outlines}</g>;
@@ -571,6 +605,20 @@ export function DesignCanvas({ g, onImageDrop }) {
           <linearGradient id="foilG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#E9CB6E" /><stop offset="0.5" stopColor="#B08A1E" /><stop offset="1" stopColor="#E3BE55" /></linearGradient>
           <linearGradient id="silvG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#EDEDF2" /><stop offset="0.5" stopColor="#9A9AA4" /><stop offset="1" stopColor="#DCDCE2" /></linearGradient>
           <linearGradient id="holoG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#f5c6d6" /><stop offset="0.25" stopColor="#c9c3f0" /><stop offset="0.5" stopColor="#b7dcf5" /><stop offset="0.75" stopColor="#c2f0dd" /><stop offset="1" stopColor="#f7ecc8" /></linearGradient>
+          {s.layers.filter(l => l.visible).map(l => {
+            const out = [];
+            if (l.grad && l.kind !== 'image') {
+              const m0 = l.kind === 'text' ? textMetrics(l) : null, box = m0 ? [l.x - m0.w0 / 2, m0.cy - m0.h0 / 2, m0.w0, m0.h0] : [l.x, l.y, l.w, l.h], q = gradGeom(l.grad, box);
+              const stops = gradStops(l.grad, l.color).map((st, i) => <stop key={i} offset={st[0]} stopColor={st[1]} />);
+              out.push(q.t === 'radial' ? <radialGradient key={'gr' + l.id} id={'gr-' + l.id} gradientUnits="userSpaceOnUse" cx={q.cx} cy={q.cy} r={q.r}>{stops}</radialGradient> : <linearGradient key={'gr' + l.id} id={'gr-' + l.id} gradientUnits="userSpaceOnUse" x1={q.x1} y1={q.y1} x2={q.x2} y2={q.y2}>{stops}</linearGradient>);
+            }
+            if (hasShadow(l)) {
+              const sh = l.shadow, rb = rotBBox(l), pad = (sh.blur || 0) * 2 + Math.abs(sh.x || 0) + Math.abs(sh.y || 0) + 2;
+              out.push(<filter key={'sh' + l.id} id={'sh-' + l.id} filterUnits="userSpaceOnUse" x={rb[0] - pad} y={rb[1] - pad} width={rb[2] + 2 * pad} height={rb[3] + 2 * pad} colorInterpolationFilters="sRGB"><feDropShadow dx={sh.x || 0} dy={sh.y || 0} stdDeviation={(sh.blur || 0) / 2} floodColor={sh.color || '#000000'} floodOpacity={sh.opacity == null ? 0.4 : sh.opacity} /></filter>);
+            }
+            if (l.clipMask) { const cm = l.clipMask; out.push(<clipPath key={'cm' + l.id} id={'cm-' + l.id} clipPathUnits="userSpaceOnUse"><path d={shapePathD(cm)} transform={rfTf(cm.rot, cm.flipX, cm.flipY, cm.x + cm.w / 2, cm.y + cm.h / 2) || undefined} /></clipPath>); }
+            return out;
+          })}
           {(g.panels || []).map(panel => {
             const id = 'design-panel-' + String(panel.panelId).replace(/[^a-zA-Z0-9_-]/g, '-');
             return <clipPath key={panel.panelId} id={id} clipPathUnits="userSpaceOnUse"><polygon points={panel.pts.map(p => p[0] + ',' + p[1]).join(' ')} /></clipPath>;
@@ -582,6 +630,7 @@ export function DesignCanvas({ g, onImageDrop }) {
           <path d={g.creasePath} fill="none" stroke="#a8c9ae" strokeWidth={1} style={{ vectorEffect: 'non-scaling-stroke' }} />
           <path d={g.cutPath} fill="none" stroke="#dfaeb2" strokeWidth={1} style={{ vectorEffect: 'non-scaling-stroke' }} />
           {dropPanel && <polygon points={dropPanel.pts.map(p => p[0] + ',' + p[1]).join(' ')} fill="rgba(40,167,161,0.18)" stroke="#28a7a1" strokeWidth={2} style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />}
+          {faceHi && <g style={{ pointerEvents: 'none' }}><polygon points={faceHi.pts.map(p => p[0] + ',' + p[1]).join(' ')} fill="rgba(154,91,31,0.05)" stroke="#9a5b1f" strokeOpacity={0.55} strokeWidth={1.4} strokeDasharray="6 3" style={{ vectorEffect: 'non-scaling-stroke' }} />{faceC && <path d={'M' + (faceC[0] - 1.6) + ' ' + faceC[1] + 'h3.2M' + faceC[0] + ' ' + (faceC[1] - 1.6) + 'v3.2'} stroke="#9a5b1f" strokeOpacity={0.6} strokeWidth={1} style={{ vectorEffect: 'non-scaling-stroke' }} />}</g>}
           {s.layers.filter(l => l.visible).map(l => renderLayer(l, false))}
           {draft && renderLayer({ ...draft, id: -1 }, true)}
           {snapG && (

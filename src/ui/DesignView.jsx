@@ -1,21 +1,23 @@
 // Diseño: capas (estilo Photoshop), barra de herramientas, lienzo plano y panel de propiedades.
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import * as ToggleGroup from '@radix-ui/react-toggle-group';
 import {
   IconTypography, IconPhoto, IconSquare, IconCopy, IconEye, IconEyeOff, IconLock, IconLockOpen, IconTrash, IconArrowBackUp, IconArrowForwardUp, IconPhotoEdit, IconPalette,
   IconLayoutAlignLeft, IconLayoutAlignCenter, IconLayoutAlignRight, IconLayoutAlignTop, IconLayoutAlignMiddle, IconLayoutAlignBottom, IconLayoutDistributeHorizontal, IconLayoutDistributeVertical,
   IconFocusCentered, IconArrowsDiagonalMinimize2, IconArrowsMaximize, IconArrowsHorizontal, IconRotate, IconRotateClockwise, IconItalic, IconAlignLeft, IconAlignCenter, IconAlignRight,
-  IconFlipHorizontal, IconFlipVertical, IconLink, IconUnlink, IconGripVertical
+  IconFlipHorizontal, IconFlipVertical, IconLink, IconUnlink, IconGripVertical, IconPolygon, IconShape, IconRulerMeasure, IconScissors
 } from '@tabler/icons-react';
 import { store, useStore } from '../state/store.js';
 import { geomOf, creaseSegsOf } from '../dieline/geom.js';
 import { heroPanelOf } from '../dieline/hero.js';
-import { bboxOf, warnsOf, dpiOf, FIN, layerNameOf, randomImageName, BLENDS, FONTS } from '../design/layers.js';
-import { bboxOfPts, containerOfLayer } from '../design/containers.js';
+import { bboxOf, warnsOf, dpiOf, FIN, layerNameOf, randomImageName, BLENDS, FONTS, clipMaskOf, sameMask } from '../design/layers.js';
+import { bboxOfPts, containerOfLayer, containerById } from '../design/containers.js';
+import { polyCentroid, faceSafePoly, faceName, faceShapeLayer, containInPoly, coverPoly } from '../design/faces.js';
+import { GradientBlock, ShadowBlock, TextStrokeBlock } from './DesignStyle.jsx';
 import { embDirOf } from '../design/emboss.js';
 import { uploadImage, imageFilesOf, readImageFile, imageLayerAt } from '../design/images.js';
-import { useD, selIdsOf, setSel } from '../design/ui.js';
-import { patchLayers, dupLayers, delLayers, reorder, placeLayer, alignLayers, distributeLayers, flipLayers } from '../design/ops.js';
+import { useD, dstore, selIdsOf, setSel } from '../design/ui.js';
+import { patchLayers, dupLayers, delLayers, reorder, placeLayer, alignLayers, distributeLayers, flipLayers, alignToEdge, setClipBelow } from '../design/ops.js';
 import { DesignCanvas } from './DesignCanvas.jsx';
 import { DesignToolbar } from './DesignToolbar.jsx';
 import { ST, Block, Note, inputSt, selectSt, btnSt, CmField, MmField, ColorRow } from './widgets.jsx';
@@ -58,34 +60,47 @@ export function DesignView() {
   const selWarns = sel ? warnsOf(sel, creaseSegs, g.sbb) : [];
   const [histPastN, histFutureN] = store.histDepth();
 
+  // La máscara guardada en una capa recortada sigue a su capa base cuando esta se mueve o cambia.
+  useEffect(() => {
+    const bad = s.layers.filter(l => { if (!l.clipBase) return false; const b = s.layers.find(x => x.id === l.clipBase); return b && !sameMask(l.clipMask, clipMaskOf(b)); });
+    if (bad.length) store.set(st => ({ layers: st.layers.map(l => { const b = l.clipBase && st.layers.find(x => x.id === l.clipBase); return b && !sameMask(l.clipMask, clipMaskOf(b)) ? { ...l, clipMask: clipMaskOf(b) } : l; }) }));
+  }, [s.layers]);
   const addL = mk => store.set(st => {
     const nl = mk(st.seq, hero);
     const bound = nl.panelId == null && hero ? { ...nl, panelId: hero.panelId } : nl;
     return { layers: st.layers.concat([bound]), seq: st.seq + 1 };
   }) || setSel([store.get().seq - 1]);
 
-  // Colocar la capa respecto a toda su cara: centrar / contener / cubrir / estirar (respeta el giro actual).
+  // Cara activa: la de la capa seleccionada, la elegida con un clic en el lienzo o la principal.
+  const faceP = (sel && containerOfLayer(g, sel)) || containerById(g, d.face) || (hero && containerById(g, hero.panelId));
+  const addFaceShape = inset => {
+    if (!faceP) return;
+    const pts = inset ? faceSafePoly(g, faceP) : faceP.pts, name = t(inset ? 'Forma con margen' : 'Forma de la cara');
+    store.set(st => ({ layers: st.layers.concat([faceShapeLayer(st.seq, faceP, pts, d.color || '#9a5b1f', name)]), seq: st.seq + 1 }));
+    setSel([store.get().seq - 1]);
+  };
+  // Colocar la capa respecto a su cara real (no a su caja): centrar en el centroide, contener dentro del contorno, cubrir todos los vértices o estirar.
   const fitSel = mode => {
     if (!sel || sel.locked) return;
     const panel = containerOfLayer(g, sel); if (!panel) return;
-    const pb = bboxOfPts(panel.pts), pw = pb[2] - pb[0], ph = pb[3] - pb[1];
-    const cx = (pb[0] + pb[2]) / 2, cy = (pb[1] + pb[3]) / 2;
+    const pb = bboxOfPts(panel.pts), pw = pb[2] - pb[0], ph = pb[3] - pb[1], rd = v => Math.round(v * 100) / 100;
+    const cen = polyCentroid(panel.pts), bcx = (pb[0] + pb[2]) / 2, bcy = (pb[1] + pb[3]) / 2;
     if (mode === 'center' || sel.kind === 'text') {
       const b = bboxOf(sel);
-      upd({ x: sel.x + (cx - (b[0] + b[2] / 2)), y: sel.y + (cy - (b[1] + b[3] / 2)) });
+      upd({ x: sel.x + (cen[0] - (b[0] + b[2] / 2)), y: sel.y + (cen[1] - (b[1] + b[3] / 2)) });
       return;
     }
-    const th = (sel.rot || 0) * Math.PI / 180, co = Math.abs(Math.cos(th)), si = Math.abs(Math.sin(th));
-    const bw = sel.w * co + sel.h * si, bh = sel.w * si + sel.h * co;
-    let w, h;
-    const quarter = Math.abs(co * si) < 1e-6;
-    if (mode === 'stretch' && quarter) { [w, h] = co > 0.5 ? [pw, ph] : [ph, pw]; }
-    else {
-      const f = mode === 'contain' ? Math.min(pw / bw, ph / bh) : Math.max(pw / bw, ph / bh);
-      w = sel.w * f; h = sel.h * f;
-    }
-    w = Math.round(w * 100) / 100; h = Math.round(h * 100) / 100;
-    upd({ w, h, x: Math.round((cx - w / 2) * 100) / 100, y: Math.round((cy - h / 2) * 100) / 100 });
+    const rot = sel.rot || 0, th = rot * Math.PI / 180, co = Math.abs(Math.cos(th)), si = Math.abs(Math.sin(th));
+    if (mode === 'cover' && sel.kind === 'shape') { upd({ x: rd(pb[0]), y: rd(pb[1]), w: rd(pw), h: rd(ph), rot: 0 }); return; } // color liso: cubre exactamente la caja de la cara
+    let w, h, cx = bcx, cy = bcy;
+    if (mode === 'stretch') {
+      const quarter = Math.abs(co * si) < 1e-6;
+      if (quarter) [w, h] = co > 0.5 ? [pw, ph] : [ph, pw]; else { const f = Math.max(pw / (sel.w * co + sel.h * si), ph / (sel.w * si + sel.h * co)); w = sel.w * f; h = sel.h * f; }
+    } else if (mode === 'contain') {
+      const r = containInPoly(panel.pts, sel.w, sel.h, rot); w = sel.w * r.f; h = sel.h * r.f; cx = r.cx; cy = r.cy;
+    } else { const f = coverPoly(panel.pts, sel.w, sel.h, rot, bcx, bcy); w = sel.w * f; h = sel.h * f; }
+    w = rd(w); h = rd(h);
+    upd({ w, h, x: rd(cx - w / 2), y: rd(cy - h / 2) });
   };
   const rotSel = dg => { if (sel && !sel.locked) upd({ rot: ((Math.round(((sel.rot || 0) + dg) * 10) / 10) % 360 + 360) % 360 }); };
   // X/Y/An/Al numéricos sobre la caja visible (texto: An/Al escalan el cuerpo de forma proporcional).
@@ -222,7 +237,17 @@ export function DesignView() {
     <DesignCanvas g={g} onImageDrop={dropImages} />
 
     <div style={{ width: 280, flex: 'none', background: '#faf7f0', borderLeft: '1px solid #ded5c4', overflowY: 'auto' }}>
-      {!sel && <div style={{ padding: '20px 14px', fontSize: 12, color: '#8a8071', lineHeight: 1.7 }}>{t('Ninguna capa seleccionada. Haz clic en un elemento del lienzo o en la lista de capas.')}</div>}
+      <Block>
+          <ST>{t('Cara activa')}</ST>
+          <select aria-label={t('Cara activa')} value={faceP ? String(faceP.panelId) : ''} onChange={e => dstore.set({ face: (g.panels || []).find(p => String(p.panelId) === e.target.value)?.panelId ?? null })} style={{ ...selectSt, marginBottom: 8 }}>
+            {(g.panels || []).filter(p => p.surface === 'outside').map(p => <option key={p.panelId} value={String(p.panelId)}>{faceName(g, p)}</option>)}
+          </select>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            <TBtn icon={IconPolygon} tip={t('Crea una forma con el contorno exacto de la cara (triángulo, hexágono…) como fondo de color')} disabled={!faceP} onClick={() => addFaceShape(false)} style={{ fontSize: 11.5, padding: '6px 4px' }}>{t('Forma de la cara')}</TBtn>
+            <TBtn icon={IconShape} tip={t('Igual, pero recortada 3 mm hacia dentro (zona segura)')} disabled={!faceP} onClick={() => addFaceShape(true)} style={{ fontSize: 11.5, padding: '6px 4px' }}>{t('Con margen 3 mm')}</TBtn>
+          </div>
+        </Block>
+        {!sel && <div style={{ padding: '20px 14px', fontSize: 12, color: '#8a8071', lineHeight: 1.7 }}>{t('Ninguna capa seleccionada. Haz clic en un elemento del lienzo o en la lista de capas.')}</div>}
       {sel && (<>
         {multi && <div style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: '#9a5b1f', borderBottom: '1px solid #e7e0d4' }}>{t('{n} capas seleccionadas', { n: ids.length })}</div>}
         <Block>
@@ -273,13 +298,14 @@ export function DesignView() {
           <Block>
             <ST>{t('Ajustar a la cara')}</ST>
             <div style={{ display: 'grid', gridTemplateColumns: sel.kind === 'text' ? '1fr' : '1fr 1fr', gap: 6 }}>
-              <TBtn icon={IconFocusCentered} tip={t('Centrar en la cara sin cambiar el tamaño')} onClick={() => fitSel('center')}>{t('Centrar')}</TBtn>
+              <TBtn icon={IconFocusCentered} tip={t('Centrar en el centroide de la cara sin cambiar el tamaño')} onClick={() => fitSel('center')}>{t('Centrar')}</TBtn>
               {sel.kind !== 'text' && <>
-                <TBtn icon={IconArrowsDiagonalMinimize2} tip={t('Escala para que quepa entera en la cara, centrada')} onClick={() => fitSel('contain')}>{t('Ajustar (entera)')}</TBtn>
-                <TBtn icon={IconArrowsMaximize} tip={t('Escala para cubrir toda la cara, centrada (puede recortarse)')} onClick={() => fitSel('cover')}>{t('Rellenar cara')}</TBtn>
+                <TBtn icon={IconArrowsDiagonalMinimize2} tip={t('Escala para que quepa entera dentro del contorno real de la cara')} onClick={() => fitSel('contain')}>{t('Ajustar (entera)')}</TBtn>
+                <TBtn icon={IconArrowsMaximize} tip={t('Cubre toda la cara (imagen o color); lo que sobresale del contorno se recorta')} onClick={() => fitSel('cover')}>{t('Rellenar cara')}</TBtn>
                 <TBtn icon={IconArrowsHorizontal} tip={t('Estira al tamaño exacto de la cara (con giro 0/90/180/270°)')} onClick={() => fitSel('stretch')}>{t('Estirar exacto')}</TBtn>
               </>}
             </div>
+            <TBtn icon={IconRulerMeasure} tip={t('Gira la capa para que quede paralela al borde más cercano de su cara')} onClick={() => alignToEdge(ids, g)} style={{ width: '100%', marginTop: 6 }}>{t('Alinear con el borde')}</TBtn>
             <div style={{ fontSize: 10.5, color: '#8a8071', margin: '10px 0 5px' }}>{t('Girar')} · {Math.round((sel.rot || 0) * 10) / 10}°</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 5, marginBottom: 5 }}>
               <TBtn icon={IconRotate} tip={t('Girar 90° a la izquierda')} onClick={() => rotSel(-90)}>90</TBtn>
@@ -318,11 +344,14 @@ export function DesignView() {
             </div>
           </Block>
         )}
+        {sel.kind === 'text' && <GradientBlock sel={sel} updAll={updAll} t={t} />}
+        {sel.kind === 'text' && <TextStrokeBlock sel={sel} updAll={updAll} t={t} />}
         {sel.kind === 'shape' && (
           <Block>
             <ST>{t('Forma')}</ST>
             <select aria-label={t('Tipo de forma')} value={sel.shape || 'rect'} onChange={e => updAll({ shape: e.target.value, ...(e.target.value === 'line' && sel.strokeW == null ? { strokeW: 0.8 } : {}) })} style={{ ...selectSt, marginBottom: 8 }}>
               {shapeKinds.map(([v, lb]) => <option key={v} value={v}>{t(lb)}</option>)}
+              {sel.shape === 'poly' && <option value="poly">{t('Contorno de cara')}</option>}
             </select>
             {sel.shape !== 'line' && (<>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -339,6 +368,7 @@ export function DesignView() {
             {sel.shape === 'star' && <div style={{ marginTop: 8 }}><Lbl>{t('Profundidad de las puntas')}</Lbl><input type="range" aria-label={t('Profundidad de las puntas')} min="10" max="90" value={Math.round((sel.innerR == null ? 0.45 : sel.innerR) * 100)} onChange={e => updAll({ innerR: parseFloat(e.target.value) / 100 })} style={{ width: '100%', accentColor: '#9a5b1f', margin: 0 }} /></div>}
           </Block>
         )}
+        {sel.kind === 'shape' && sel.shape !== 'line' && <GradientBlock sel={sel} updAll={updAll} t={t} />}
         {sel.kind === 'image' && (
           <Block>
             {sel.imgSrc && (
@@ -352,6 +382,7 @@ export function DesignView() {
             {!sel.imgSrc && <div><Lbl>{t('Origen px')}</Lbl><input type="number" step="100" value={sel.pxw} onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) upd({ pxw: Math.max(50, v) }); }} style={inputSt} /></div>}
           </Block>
         )}
+        {!(sel.kind === 'shape' && sel.shape === 'line') && <ShadowBlock sel={sel} updAll={updAll} t={t} />}
         <Block>
           <ST>{t('Acabado')}</ST>
           <select aria-label={t('Acabado de capa')} value={sel.finish || 'none'} onChange={e => { const finish = e.target.value; updAll({ finish }); if (finish === 'gloss') store.set(st => ({ fx: { ...st.fx, gloss: true } })); if (finish === 'holo' && !store.get().iridescence3d) store.set({ iridescence3d: 0.85 }); }} style={selectSt}>
@@ -378,6 +409,7 @@ export function DesignView() {
             <button type="button" onClick={() => reorder(ids, 'down')} style={{ ...btnSt, fontSize: 11.5 }}>{t('Bajar')}</button>
             <button type="button" onClick={() => reorder(ids, 'back')} style={{ ...btnSt, fontSize: 11.5 }}>{t('Fondo')}</button>
           </div>
+          {!multi && <TBtn icon={IconScissors} tip={sel.clipMask ? t('Quita la máscara de recorte de esta capa') : t('Recorta esta capa con la forma de la capa inmediatamente inferior de la misma cara')} onClick={() => setClipBelow(sel.id, g, !sel.clipMask)} style={{ width: '100%', marginBottom: 8, background: sel.clipMask ? '#9a5b1f' : '#fff', color: sel.clipMask ? '#fff' : '#3d3830' }}>{sel.clipMask ? t('Liberar máscara de recorte') : t('Recortar con la capa de abajo')}</TBtn>}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
             <TBtn icon={IconCopy} tip={t('Duplicar la capa seleccionada (⌘D / Ctrl+D)')} onClick={() => dupLayers(ids)} style={{ padding: '7px 0' }}>{t('Duplicar')}</TBtn>
             <TBtn icon={sel.locked ? IconLock : IconLockOpen} tip={t('Bloquear / desbloquear')} onClick={() => updAll({ locked: !sel.locked })} style={{ padding: '7px 0', background: sel.locked ? '#211d18' : '#fff', color: sel.locked ? '#fff' : '#3d3830' }}>{sel.locked ? t('Bloqueada') : t('Bloquear')}</TBtn>

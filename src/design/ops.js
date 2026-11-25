@@ -1,7 +1,8 @@
 // Operaciones de capas del diseñador. Todo es inmutable y pasa por store.set (→ historial deshacer/rehacer).
 import { store } from '../state/store.js';
 import { dstore, setSel } from './ui.js';
-import { bboxOf, rotBBox } from './layers.js';
+import { bboxOf, rotBBox, clipMaskOf } from './layers.js';
+import { polyCentroid, edgeRotation } from './faces.js';
 import { bboxOfPts, containerOfLayer, containerAt } from './containers.js';
 
 export const mapLayers = (ids, fn) => store.set(st => ({ layers: st.layers.map(l => ids.includes(l.id) ? { ...fn(l), heroPreset: undefined } : l) }));
@@ -64,10 +65,12 @@ export function alignLayers(ids, mode, rel, g) {
   const d = {};
   ls.forEach(l => {
     const b = rotBBox(l); let pb = ub, m = 0;
-    if (!pb) { const p = containerOfLayer(g, l); pb = p ? bboxOfPts(p.pts) : g.sbb; m = Math.min(3, (pb[2] - pb[0]) / 4, (pb[3] - pb[1]) / 4); }
+    let p0 = null; if (!pb) { const p = p0 = containerOfLayer(g, l); pb = p ? bboxOfPts(p.pts) : g.sbb; m = Math.min(3, (pb[2] - pb[0]) / 4, (pb[3] - pb[1]) / 4); }
+    // centrar «en la cara» = centroide del contorno (en un triángulo no coincide con el centro de la caja)
+    const fc = !ub && p0 ? polyCentroid(p0.pts) : [(pb[0] + pb[2]) / 2, (pb[1] + pb[3]) / 2];
     let dx = 0, dy = 0;
-    if (mode === 'l') dx = pb[0] + m - b[0]; else if (mode === 'cx') dx = (pb[0] + pb[2]) / 2 - (b[0] + b[2] / 2); else if (mode === 'r') dx = pb[2] - m - (b[0] + b[2]);
-    if (mode === 't') dy = pb[1] + m - b[1]; else if (mode === 'cy') dy = (pb[1] + pb[3]) / 2 - (b[1] + b[3] / 2); else if (mode === 'b') dy = pb[3] - m - (b[1] + b[3]);
+    if (mode === 'l') dx = pb[0] + m - b[0]; else if (mode === 'cx') dx = fc[0] - (b[0] + b[2] / 2); else if (mode === 'r') dx = pb[2] - m - (b[0] + b[2]);
+    if (mode === 't') dy = pb[1] + m - b[1]; else if (mode === 'cy') dy = fc[1] - (b[1] + b[3] / 2); else if (mode === 'b') dy = pb[3] - m - (b[1] + b[3]);
     d[l.id] = [dx, dy];
   });
   mapLayers(ls.map(l => l.id), l => ({ ...l, x: l.x + d[l.id][0], y: l.y + d[l.id][1] }));
@@ -85,4 +88,47 @@ export function distributeLayers(ids, axis, g) {
   items.forEach(i => { d[i.l.id] = pos - i.b[i0]; pos += i.b[i2] + gap; });
   mapLayers(ls.map(l => l.id), l => axis === 'x' ? { ...l, x: l.x + d[l.id] } : { ...l, y: l.y + d[l.id] });
   if (g) rebind(ls.map(l => l.id), g);
+}
+
+// Gira cada capa para que quede paralela al borde más cercano de su cara.
+export function alignToEdge(ids, g) {
+  mapLayers(ids, l => {
+    if (l.locked) return l;
+    const p = containerOfLayer(g, l), b = bboxOf(l); if (!p) return l;
+    return { ...l, rot: edgeRotation(p.pts, [b[0] + b[2] / 2, b[1] + b[3] / 2]) };
+  });
+}
+
+// Recorta una capa con la forma de la capa inmediatamente inferior de su misma cara (clipBase = id de esa capa); sin base, la libera.
+export function setClipBelow(id, g, on) {
+  store.set(st => {
+    const i = st.layers.findIndex(l => l.id === id); if (i < 0) return null;
+    const me = st.layers[i];
+    if (!on) return { layers: st.layers.map(l => l.id === id ? { ...l, clipMask: undefined, clipBase: undefined } : l) };
+    const pid = (containerOfLayer(g, me) || {}).panelId;
+    let base = null; for (let j = i - 1; j >= 0 && !base; j--) { const c = st.layers[j]; if (c.visible && c.kind !== 'text' && !(c.kind === 'shape' && c.shape === 'line') && (containerOfLayer(g, c) || {}).panelId === pid) base = c; }
+    if (!base) return null;
+    return { layers: st.layers.map(l => l.id === id ? { ...l, clipMask: clipMaskOf(base), clipBase: base.id } : l) };
+  });
+}
+
+// Transformación de grupo: escala (sx, sy) respecto a (px, py) y giro dr° alrededor del mismo punto, a partir de las capas originales.
+// Las capas giradas ≠ 0/90° se escalan de forma uniforme para no deformarse.
+export function xformLayers(orig, px, py, sx, sy, dr) {
+  const a = dr * Math.PI / 180, co = Math.cos(a), si = Math.sin(a), out = {};
+  orig.forEach(l => {
+    if (l.locked) return;
+    const b = bboxOf(l), cx = b[0] + b[2] / 2, cy = b[1] + b[3] / 2;
+    const vx = (cx - px) * sx, vy = (cy - py) * sy, ncx = px + vx * co - vy * si, ncy = py + vx * si + vy * co;
+    const rot = ((((l.rot || 0) + dr) % 360) + 360) % 360, q = ((l.rot || 0) % 180 + 180) % 180, uni = Math.sqrt(Math.abs(sx * sy));
+    const fx = q < 0.01 ? sx : Math.abs(q - 90) < 0.01 ? sy : uni, fy = q < 0.01 ? sy : Math.abs(q - 90) < 0.01 ? sx : uni;
+    if (l.kind === 'text') {
+      const nl = { ...l, size: Math.min(120, Math.max(1.5, l.size * uni)), rot, heroPreset: undefined }, nb = bboxOf(nl);
+      out[l.id] = { ...nl, x: nl.x + (ncx - (nb[0] + nb[2] / 2)), y: nl.y + (ncy - (nb[1] + nb[3] / 2)) };
+    } else {
+      const w = Math.max(0.5, l.w * Math.abs(fx)), h = Math.max(l.shape === 'line' ? 0.1 : 0.5, l.h * Math.abs(fy));
+      out[l.id] = { ...l, w, h, x: ncx - w / 2, y: ncy - h / 2, rot, heroPreset: undefined };
+    }
+  });
+  return out;
 }
