@@ -22,6 +22,28 @@ export function geomOf(s, t) {
   const region = (pts, meta) => { tr(pts, o.sbb); tr(pts, o.vbb); o.panels.push({ role: 'design', surface: 'outside', ...meta, pts }); };
   const panel = (pts, meta) => { fill(pts); region(pts, meta); };
   const safeR = (x, y, w, h, m) => { m = m ?? Math.min(3, w / 4, h / 4); o.safes.push([x + m, y + m, w - 2 * m, h - 2 * m]); };
+  // Zona segura de una silueta cualquiera: el contorno desplazado m mm hacia dentro (intersección de lados desplazados).
+  const safeP = (pts, m) => {
+    const n = pts.length; if (n < 3) return;
+    let area = 0; for (let i = 0; i < n; i++) { const q = pts[(i + 1) % n]; area += pts[i][0] * q[1] - q[0] * pts[i][1]; }
+    const s = area > 0 ? 1 : -1, off = [];
+    for (let i = 0; i < n; i++) {
+      const a = pts[i], b = pts[(i + 1) % n], l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (l < 1e-6) continue;
+      const nx = -(b[1] - a[1]) / l * s, ny = (b[0] - a[0]) / l * s; // normal hacia dentro
+      off.push([[a[0] + nx * m, a[1] + ny * m], [b[0] - a[0], b[1] - a[1]]]);
+    }
+    const out = [];
+    for (let i = 0; i < off.length; i++) {
+      const [p, d] = off[(i - 1 + off.length) % off.length], [q, e] = off[i];
+      const den = d[0] * e[1] - d[1] * e[0];
+      if (Math.abs(den) < 1e-9) { out.push(q); continue; }
+      const u = ((q[0] - p[0]) * e[1] - (q[1] - p[1]) * e[0]) / den;
+      out.push([p[0] + d[0] * u, p[1] + d[1] * u]);
+    }
+    let a2 = 0; for (let i = 0; i < out.length; i++) { const q = out[(i + 1) % out.length]; a2 += out[i][0] * q[1] - q[0] * out[i][1]; }
+    if (out.length >= 3 && a2 * area > 0 && Math.abs(a2) < Math.abs(area)) o.safes.push(out); // descarta si se invierte (cara muy pequeña)
+  };
   const label = (x, y, name, fs) => o.labels.push({ x: r2(x), y: r2(y + 1.4), name, fs: fs || 4 });
   const dimH = (x1, x2, y, txt) => { o.dims.push({ gtf: 'translate(' + r2(x1) + ' ' + r2(y) + ')', len: r2(x2 - x1), mid: r2((x2 - x1) / 2), label: txt }); tr([[x1, y - 5], [x2, y + 3]], o.vbb); };
   const dimV = (y1, y2, x, txt) => { o.dims.push({ gtf: 'translate(' + r2(x) + ' ' + r2(y2) + ') rotate(-90)', len: r2(y2 - y1), mid: r2((y2 - y1) / 2), label: txt }); tr([[x - 5, y1], [x + 3, y2]], o.vbb); };
@@ -37,7 +59,7 @@ export function geomOf(s, t) {
   const encaje = (pts, meta = {}) => { cut(pts); o.slots.push({ pts, ...meta }); };
   const rect = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
   const fmt = v => Math.round(v * 10) / 10;
-  const ctx = { cut, crease, perf, fill, panel, region, safeR, label, dimH, dimV, q, rect, fmt, encaje };
+  const ctx = { cut, crease, perf, fill, panel, region, safeR, safeP, label, dimH, dimV, q, rect, fmt, encaje };
 
   if (s.tpl === 'rte' || s.tpl === 'ste') genTuck(ctx, s, t, s.tpl === 'rte');
   else if (s.tpl === 'mailer') genMailer(ctx, s, t);
@@ -63,7 +85,9 @@ export function geomOf(s, t) {
   const toPath = ty => o.segs.filter(g => g.t === ty).map(g => 'M' + g.pts.map(p => r2(p[0]) + ' ' + r2(p[1])).join('L')).join(' ');
   o.cutPath = toPath('cut'); o.creasePath = toPath('crease'); o.perfPath = toPath('perf');
   o.fillPath = o.fills.map(pts => 'M' + pts.map(p => r2(p[0]) + ' ' + r2(p[1])).join('L') + 'Z').join(' ');
-  o.safePath = o.safes.map(r => 'M' + r2(r[0]) + ' ' + r2(r[1]) + 'h' + r2(r[2]) + 'v' + r2(r[3]) + 'h' + r2(-r[2]) + 'Z').join(' ');
+  o.safePath = o.safes.map(r => Array.isArray(r[0])
+    ? 'M' + r.map(p => r2(p[0]) + ' ' + r2(p[1])).join('L') + 'Z'
+    : 'M' + r2(r[0]) + ' ' + r2(r[1]) + 'h' + r2(r[2]) + 'v' + r2(r[3]) + 'h' + r2(-r[2]) + 'Z').join(' ');
   const len = ty => o.segs.filter(g => g.t === ty).reduce((a, g) => { let l = 0; for (let i = 0; i < g.pts.length - 1; i++) l += Math.hypot(g.pts[i + 1][0] - g.pts[i][0], g.pts[i + 1][1] - g.pts[i][1]); return a + l; }, 0);
   o.cutLen = len('cut'); o.creaseLen = len('crease'); o.perfLen = len('perf');
   o.cutN = o.segs.filter(g => g.t === 'cut').length; o.creaseN = o.segs.filter(g => g.t === 'crease').length;

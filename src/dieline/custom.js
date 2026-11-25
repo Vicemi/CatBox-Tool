@@ -498,22 +498,14 @@ export function genCustom(ctx, state, t) {
     // El nombre no debe desbordar la cara (en pestañas estrechas se recorta con «…»)
     const fit = Math.max(3, Math.floor(((Math.max(...xs) - Math.min(...xs)) * 0.9) / (fs * 0.55)));
     ctx.label(cx, cy, full.length > fit ? full.slice(0, fit - 1) + '…' : full, fs);
-    ctx.safeR(n.rect[0], n.rect[1], n.rect[2], n.rect[3], Math.min(3, n.w / 4, n.h / 4));
+    // Zona segura con la silueta real de la cara (un triángulo tiene zona segura triangular).
+    if ((n.shape === 'rect' || n.shape === 'lid') && !n.miterL && !n.miterR) ctx.safeR(n.rect[0], n.rect[1], n.rect[2], n.rect[3], Math.min(3, n.w / 4, n.h / 4));
+    else ctx.safeP(pts, Math.min(3, n.w / 4, n.h / 4));
   }
 
-  // Bisagras
+  // Bisagras: el tramo real de la hija (de x = 0 a x = w), también en lados poligonales.
   for (const n of nodes) {
     if (!n.parent) continue;
-    if (isPolyEdge(n.edge)) {
-      const parent = lay.byId.get(n.parent);
-      const pts = parent && parent.shapePts;
-      const idx = pts ? edgeIndex(n.edge) % pts.length : -1;
-      if (pts && idx >= 0) {
-        const p0 = pts[idx], p1 = pts[(idx + 1) % pts.length];
-        ctx.crease([mapLocal(parent, p0[0], p0[1]), mapLocal(parent, p1[0], p1[1])]);
-        continue;
-      }
-    }
     ctx.crease([mapLocal(n, 0, 0), mapLocal(n, n.w, 0)]);
   }
 
@@ -529,41 +521,47 @@ export function genCustom(ctx, state, t) {
     ['xmin', n => [0, 0], n => [0, n.h]],
     ['xmax', n => [n.w, 0], n => [n.w, n.h]]
   ];
+  // Corta el lado a→b salvo los tramos donde se apoya la bisagra de alguna hija (sea cual sea el borde
+  // con el que se unió): así una solapa nunca queda «cortada» de su madre ni hay cortes sobre un pliegue.
+  const cutAround = (a, b, kids) => {
+    const vx = b[0] - a[0], vy = b[1] - a[1], L2 = vx * vx + vy * vy, L = Math.sqrt(L2) || 1;
+    const off = p => Math.abs((p[0] - a[0]) * vy - (p[1] - a[1]) * vx) / L;
+    const tOf = p => ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / (L2 || 1);
+    const intervals = [];
+    for (const ch of kids) {
+      const c = mapLocal(ch, 0, 0), d = mapLocal(ch, ch.w, 0);
+      if (off(c) > 0.05 || off(d) > 0.05) continue;
+      let t1 = tOf(c), t2 = tOf(d);
+      if (t1 > t2) { const q = t1; t1 = t2; t2 = q; }
+      if (t2 < 1e-4 || t1 > 1 - 1e-4) continue;
+      intervals.push([clamp(t1, 0, 1), clamp(t2, 0, 1)]);
+    }
+    intervals.sort((u, v) => u[0] - v[0]);
+    let cursor = 0;
+    for (const [t1, t2] of intervals) {
+      if (t1 > cursor + 1e-4) ctx.cut([lerp(a, b, cursor), lerp(a, b, t1)]);
+      cursor = Math.max(cursor, t2);
+    }
+    if (cursor < 1 - 1e-4) ctx.cut([lerp(a, b, cursor), b]);
+  };
   for (const n of nodes) {
-    if (n.shape !== 'rect') {
-      // Siluetas especiales: se corta su perímetro real (pestañas, muescas, arcos…),
+    const kids = lay.childrenOf[n.id] || [];
+    if (n.shape !== 'rect' || n.miterL || n.miterR) {
+      // Siluetas especiales: se corta su perímetro real (pestañas, muescas, arcos, ingletes…),
       // no el rectángulo envolvente.
       const pts = n.shapePts;
-      const attached = new Set((lay.childrenOf[n.id] || []).filter(ch => isPolyEdge(ch.edge)).map(ch => edgeIndex(ch.edge)));
       for (let i = 0; i < pts.length; i++) {
         const p0 = pts[i], p1 = pts[(i + 1) % pts.length];
         if (n.parent && Math.abs(p0[1]) < 0.01 && Math.abs(p1[1]) < 0.01) continue; // bisagra
-        if (attached.has(i)) continue; // borde poligonal usado como bisagra
         const a = mapLocal(n, p0[0], p0[1]), b = mapLocal(n, p1[0], p1[1]);
-        if (dist(a, b) >= 0.05) ctx.cut([a, b]);
+        if (dist(a, b) >= 0.05) cutAround(a, b, kids);
       }
       continue;
     }
     for (const [edge, p0, p1] of edgeEnds) {
       if (n.parent && edge === 'near') continue;
       const a = mapLocal(n, ...p0(n)), b = mapLocal(n, ...p1(n));
-      if (dist(a, b) < 0.05) continue;
-      const kids = (lay.childrenOf[n.id] || []).filter(ch => ch.edge === edge);
-      if (!kids.length) { ctx.cut([a, b]); continue; }
-      const vx = b[0] - a[0], vy = b[1] - a[1], L2 = vx * vx + vy * vy;
-      const tOf = p => clamp(((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / (L2 || 1), 0, 1);
-      const intervals = kids.map(ch => {
-        const c = mapLocal(ch, 0, 0), d = mapLocal(ch, ch.w, 0);
-        let t1 = tOf(c), t2 = tOf(d);
-        if (t1 > t2) { const q = t1; t1 = t2; t2 = q; }
-        return [t1, t2];
-      }).sort((u, v) => u[0] - v[0]);
-      let cursor = 0;
-      for (const [t1, t2] of intervals) {
-        if (t1 > cursor + 1e-4) ctx.cut([lerp(a, b, cursor), lerp(a, b, t1)]);
-        cursor = Math.max(cursor, t2);
-      }
-      if (cursor < 1 - 1e-4) ctx.cut([lerp(a, b, cursor), b]);
+      if (dist(a, b) >= 0.05) cutAround(a, b, kids);
     }
   }
 
@@ -629,15 +627,12 @@ function nodeTree(n, lay) {
     uvAffine: n.O && n.ex && n.ey ? [n.O[0], n.O[1], n.ex[0], n.ex[1], n.ey[0], n.ey[1]] : undefined,
     kids
   };
-  if (['round', 'chamfer', 'arch', 'taper', 'triangle', 'rttri', 'mushroom', 'notch', 'wave', 'wrap-flap', 'side-tab', 'disc', 'poly'].includes(n.shape)) {
-    base.shape = 'poly'; base.pts = n.shapePts;
-  } else if (n.shape === 'lid') {
-    base.shape = 'lid';
-  } else if (['tuck', 'dust', 'ear', 'glue'].includes(n.shape)) {
-    base.shape = n.shape;
-  } else {
-    base.shape = 'rect';
-  }
+  // El 3D usa exactamente la misma silueta que el plano 2D (incluido el inglete); solo el rectángulo puro
+  // y la tapa conservan su malla propia.
+  // El nombre de la forma se conserva (la secuencia de montaje clasifica solapas por tipo); la malla usa pts.
+  if (n.shape === 'lid') base.shape = 'lid';
+  else if (n.shape === 'rect' && !n.miterL && !n.miterR) base.shape = 'rect';
+  else { base.shape = ['tuck', 'dust', 'ear', 'glue'].includes(n.shape) ? n.shape : 'poly'; base.pts = n.shapePts; }
   return base;
 }
 
@@ -964,8 +959,6 @@ export function edgeFree(custom, parentId, edge, exceptId) {
   return !(c.panels || []).some(p => p.parent === parentId && p.edge === edge && p.id !== exceptId);
 }
 
-// Siluetas con lados propios: sus bordes son los lados reales del polígono (e0…eN), no los 4 de un rectángulo.
-export const POLY_EDGE_SHAPES = ['triangle', 'rttri', 'poly', 'disc', 'taper', 'glue'];
 const panelLocalPts = p => shapePoints(p.shape, p.w, p.h, { corner: p.corner, hinge: !!p.parent, n: p.n, pts: p.pts, mL: p.miterL, mR: p.miterR });
 
 /**
@@ -986,7 +979,9 @@ export function panelEdgeList(p) {
     if ((area >= 0 ? -cr : cr) < 0) ang = 360 - ang; // vértice reflejo
     return ang;
   };
-  if (!POLY_EDGE_SHAPES.includes(p.shape)) {
+  // Solo un rectángulo puro conserva los 4 bordes con nombre; cualquier otra silueta (solapas con inglete,
+  // lengüetas, triángulos…) ofrece sus lados reales, para que lo que se pegue quede sobre la línea de corte.
+  if ((p.shape === 'rect' || p.shape === 'lid') && !p.miterL && !p.miterR) {
     const list = [
       { id: 'far', name: 'Borde exterior', len: p.w },
       { id: 'xmin', name: 'Borde izquierdo', len: p.h },
@@ -998,7 +993,7 @@ export function panelEdgeList(p) {
   const out = [];
   for (let i = 0; i < n; i++) {
     const a = pts[i], b = pts[(i + 1) % n], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    if (len < 1) continue;
+    if (len < 3) continue; // tramos de curva demasiado cortos para unir nada
     if (p.parent && Math.abs(a[1]) < 1e-6 && Math.abs(b[1]) < 1e-6) continue; // bisagra
     out.push({ id: 'e' + i, name: 'Lado {n}', nameN: out.length + 1, len, a, b, angA: angAt(i), angB: angAt((i + 1) % n) });
   }
