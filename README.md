@@ -33,14 +33,22 @@ CatBox Tool adapta OpenBox3D al español, inglés y chino, suma herramientas par
 ### Funciones
 
 - **Biblioteca de troqueles**: tuck inverso y recto, caja de envío, tapa y base, cajón, cilindro, hexágono y envolvente, con compensación de espesor, sangrado y zona segura.
-- **Mi caja**: caja paramétrica rápida o editor de red avanzado. Se agregan, mueven y ajustan caras, solapas, lengüetas, cortes, pliegues y ranuras, con reglas, guías y desplazamiento fino.
-- **Caras de forma libre** (v0.1.4): una cara con `shape: "poly"` lleva su propio contorno en `pts` (mm locales, bisagra de `[0,0]` a `[w,0]`). Permite pirámides, bisagras inclinadas y lóbulos curvos (tapas de corazón).
+- **Mi caja**: caja paramétrica rápida o editor de red avanzado, con reglas, guías y desplazamiento fino.
+  - **Empezar desde cero** con una base cuadrada, rectangular, triangular, de trapecio, hexagonal u octogonal.
+  - **Paleta de formas y solapas**: arrastra una cara o solapa hasta cualquier borde y se pega sola; también con los «+» de cada borde libre. Una solapa se puede pegar en otra solapa.
+  - **Lados reales**: en triángulos y cualquier silueta no rectangular, las solapas se apoyan en los lados de verdad y se recortan en inglete para no pisarse en las esquinas.
+  - **Perfiles de solapa**: recta, lengüeta, guardapolvo, pegado, asimétrica (recta de un lado, en ángulo del otro), circular, recta + curva, redondeada, seta; inglete y radio de esquina por lado.
+  - **Forma libre**: cualquier cara se convierte en vértices editables (arrastrar, añadir, borrar).
+  - **Cortes, pliegues, punteado (perforación), ranuras con extremos redondeados y agujeros circulares**, también visibles como huecos en 3D.
+- **Caras de forma libre** en archivos: una cara con `shape: "poly"` lleva su propio contorno en `pts` (mm locales, bisagra de `[0,0]` a `[w,0]`).
 - **Cajas autobloqueantes sin pegamento**: lengüetas tipo hongo que pasan por ranuras de 0,8 mm, trabas de esquina y tapas con solapa de una sola pieza.
 - **Revisión automática**: detecta caras, solapas y ranuras incoherentes y sugiere correcciones.
-- **Diseño**: texto, imágenes y formas por cara, con acabados por capa (oro/plata, UV, brillo, holográfico, relieve). Cada capa se recorta a la cara a la que pertenece.
+- **Diseño estilo Photoshop**: barra de herramientas con atajos (mover, texto, formas, imagen, mano, zoom, cuentagotas), transformar con tiradores, panel de capas (reordenar, bloquear, opacidad, modos de fusión), alinear y distribuir, selección múltiple y transformación en grupo, degradados, sombras, contorno de texto, máscara de recorte, guías inteligentes y portapapeles.
+  - **Pensado para caras no rectangulares**: fondo con la forma exacta de la cara (triángulo, hexágono…), rellenar o ajustar a la cara real, centrar en el centroide y alinear con un borde.
+  - Acabados por capa (oro/plata, UV, brillo, holográfico, relieve). Cada capa se recorta a la cara a la que pertenece.
 - **Editor de imágenes**: capas, pincel, borrador, formas, texto, recorte, ajustes y quitar fondo.
-- **Vista 3D**: materiales PBR y plegado paso a paso. El arte se mapea exacto en caras con cualquier ángulo de bisagra y las redes plegadas ya no se ven espejadas (v0.1.4).
-- **Producción**: SVG láser 1:1 con capas de corte y pliegue, PDF para imprenta con sangrado y separaciones, y nesting de varias cajas por plancha.
+- **Vista 3D**: materiales PBR y plegado paso a paso, con la misma silueta que el troquel 2D. Renderiza solo cuando algo cambia: sin consumo en reposo y repintado de capas en ~30 ms.
+- **Producción**: SVG láser 1:1 y **DXF R12 y AutoCAD 2000** con capas CORTE (rojo), MARCADO (azul) y PUNTEADO (azul, partido en trazos reales de 3/2 mm), PDF para imprenta con sangrado y separaciones, y nesting de varias cajas por plancha.
 - **Proyectos** `.boxproj` locales (sin servidor, cuenta ni telemetría). Se pueden abrir por URL: `?project=/ruta/archivo.boxproj`.
 
 ### Inicio rápido
@@ -70,14 +78,22 @@ CatBox Tool ports OpenBox3D to Spanish, English and Chinese, and adds more box-b
 ### Features
 
 - **Dieline library**: reverse and straight tuck, mailer, lid & base, drawer, cylinder, hexagon and wrap boxes, with material thickness compensation, bleed and safe zone.
-- **My box**: quick parametric box or advanced net editor. Add, move and resize faces, flaps, tabs, cuts, creases and slots, with rulers, guides and fine nudging.
-- **Free-form faces** (v0.1.4): a face with `shape: "poly"` carries its own outline in `pts` (panel-local mm, hinge from `[0,0]` to `[w,0]`). Pyramids, slanted hinges and curved lobes (heart lids) work.
+- **My box**: quick parametric box or advanced net editor, with rulers, guides and fine nudging.
+  - **Start from scratch** with a square, rectangle, triangle, trapezoid, hexagon or octagon base.
+  - **Shapes and flaps palette**: drag a face or flap onto any edge and it snaps into place; or use the "+" on each free edge. A flap can be attached to another flap.
+  - **Real sides**: on triangles and any non-rectangular outline, flaps sit on the true sides and are mitred so they don't overlap at the corners.
+  - **Flap profiles**: straight, tuck, dust, glue, asymmetric (straight on one side, angled on the other), circular, straight + curved, rounded, mushroom lock; mitre and corner radius per side.
+  - **Free form**: turn any face into editable vertices (drag, add, delete).
+  - **Cuts, creases, perforation lines, rounded-end slots and circular holes**, also shown as openings in 3D.
+- **Free-form faces** in files: a face with `shape: "poly"` carries its own outline in `pts` (panel-local mm, hinge from `[0,0]` to `[w,0]`).
 - **Self-locking boxes, no glue**: mushroom tabs through 0.8 mm slits, corner locks and one-piece tuck lids.
 - **Smart checks**: preflight detects inconsistent faces, flaps and slots and suggests fixes.
-- **Design**: text, images and shapes per face, with per-layer finishes (gold/silver foil, spot UV, gloss, holographic, emboss). Each layer is clipped to the face it belongs to.
+- **Photoshop-style design**: toolbar with shortcuts (move, text, shapes, image, hand, zoom, eyedropper), on-canvas transform, layers panel (reorder, lock, opacity, blend modes), align and distribute, multi-select and group transform, gradients, drop shadows, text outline, clipping mask, smart guides and clipboard.
+  - **Built for non-rectangular faces**: a background with the exact face outline (triangle, hexagon…), fill or fit to the real face, centre on the centroid and align to an edge.
+  - Per-layer finishes (gold/silver foil, spot UV, gloss, holographic, emboss). Each layer is clipped to the face it belongs to.
 - **Image editor**: layers, brush, eraser, shapes, text, crop, adjustments and background removal.
-- **3D preview**: PBR materials and step-by-step folding. Art is mapped exactly on faces at any hinge angle, and folded nets are no longer shown mirrored (v0.1.4).
-- **Production output**: 1:1 laser SVG with cut and crease layers, print PDF with bleed and separations, and nesting of several boxes per sheet.
+- **3D preview**: PBR materials and step-by-step folding, with the same outline as the 2D dieline. Renders only when something changes: no load while idle and layer repaints in ~30 ms.
+- **Production output**: 1:1 laser SVG and **DXF R12 and AutoCAD 2000** with CORTE (red, cut), MARCADO (blue, crease) and PUNTEADO (blue, perforation split into real 3/2 mm dashes) layers, print PDF with bleed and separations, and nesting of several boxes per sheet.
 - **Projects**: local `.boxproj` files (no server, no account, no telemetry). Open one by URL: `?project=/path/file.boxproj`.
 
 ### Quick start

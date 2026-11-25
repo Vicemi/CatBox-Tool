@@ -58,6 +58,17 @@ Status legend: ☐ todo · ◐ in progress · ☑ done
 - ☑ `?project=<url>` opens a `.boxproj` at startup
 - ☐ UI to draw/edit `poly` outlines (today they come from project files)
 
+## 9. v0.2.0 — builder, designer, DXF, 3D performance
+- ☑ Builder: shape palette (drag onto any edge, "+" on free edges), start from scratch, real polygon sides on every non-rect face, mitred flaps, flaps on flaps, flaps follow their edge (`fit`)
+- ☑ Flap profiles: asymmetric, circular (`halfdisc`), straight + curved (`quarter`), corner radius per side (`roundL`/`roundR`), mitre per side (`miterL`/`miterR`)
+- ☑ Free-form faces: vertex editing on canvas (`toFreeForm`, `editVertex`)
+- ☑ Line kinds: cut, crease, perforation (`perf`), slot (optional rounded ends), circular hole (`hole`); holes cut in the 3D mesh
+- ☑ Safe zones and resize handles follow the real outline
+- ☑ Designer: Photoshop-style toolbar and layers, transform, align/distribute, multi-select and group transform, gradients, shadows, text outline, clipping mask, face-shaped layers, fit/cover to face, centroid centring
+- ☑ DXF R12 / AutoCAD 2000 export (CORTE, MARCADO, PUNTEADO with real dashes); perforation layer in laser SVG
+- ☑ 3D: render on demand, cached shadows and paper maps, 1×1 empty channels
+- Checks: `node scripts/check-builder-flaps.mjs`, `node scripts/check-builder-shapes.mjs`, `node scripts/check-dxf.mjs`, `npm run check:template-sync`
+
 ## Known limits / next
 - Nesting packs the bounding box of the whole dieline (no contour interlock, no per-piece split).
 - Templates converted to «Mi caja» lose the 3D assembly info of lid/drawer templates.
