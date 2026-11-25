@@ -1,5 +1,6 @@
 // Traducciones del área «design». Clave = texto en español; valor = traducción.
-export default {
+import tools from './design-tools.js';
+const base = {
   en: {
     'Capas': 'Layers', 'Deshacer (⌘Z / Ctrl+Z)': 'Undo (⌘Z / Ctrl+Z)', 'Rehacer (⌘⇧Z / Ctrl+Shift+Z)': 'Redo (⌘⇧Z / Ctrl+Shift+Z)',
     'Añadir una capa de texto': 'Add a text layer', 'Texto': 'Text', 'Doble clic para editar': 'Double-click to edit', 'Imagen': 'Image',
@@ -65,3 +66,4 @@ export default {
     'No se pudo leer la imagen. Usa PNG, JPG o WebP.': '无法读取图片。请使用 PNG、JPG 或 WebP。'
   }
 };
+export default { en: { ...base.en, ...tools.en }, zh: { ...base.zh, ...tools.zh } };

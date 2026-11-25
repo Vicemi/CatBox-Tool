@@ -2,11 +2,12 @@
 import React from 'react';
 import { geomOf } from '../dieline/geom.js';
 import { BoxCanvas } from './BoxCanvas.jsx';
+import { layerStyleKey } from '../design/layers.js';
 
 export function boxPreviewContextOf(s, m) {
   const g = geomOf(s, m.t);
   const bakeKey = JSON.stringify({
-    layers: s.layers.map(l => ({ k: l.kind, pid: l.panelId, x: l.x, y: l.y, w: l.w, h: l.h, c: l.content, f: l.font, s: l.size, sx: l.scaleX, sy: l.scaleY, wt: l.weight, col: l.color, fin: l.finish, edir: l.embDir, r: l.rot, o: l.opacity, v: l.visible, cw: l.crop, px: l.pxw, im: l.imgSrc ? l.imgSrc.length : 0 })),
+    layers: s.layers.map(l => ({ k: l.kind, pid: l.panelId, x: l.x, y: l.y, w: l.w, h: l.h, c: l.content, f: l.font, s: l.size, sx: l.scaleX, sy: l.scaleY, wt: l.weight, col: l.color, fin: l.finish, edir: l.embDir, r: l.rot, o: l.opacity, v: l.visible, cw: l.crop, px: l.pxw, im: l.imgSrc ? l.imgSrc.length : 0, ls: layerStyleKey(l) })),
     panels: g.panels.map(p => [p.panelId, p.pts]),
     paper: s.paper3d, grain: [s.grainStrength, s.grainScale], fx: s.fx, glossR: s.glossRoughness3d, ed: s.embDepth, es: s.embSharpness3d, edir: s.embDir, eb: s.embBoost, bleed: s.bleed,
     fc: s.foilColor3d, sc: s.silverColor3d, hc: s.holoColor3d, rbw: s.holoRainbow3d, pt: s.paperTint3d // 箔色/镭射底色/彩虹底纹/纸张底色进烘焙（albedo 染色）；iridescence/跨度只进材质，不进 bakeKey
