@@ -4,7 +4,7 @@ import { normalizeMaterial, materialToStorePatch } from '../render3d/materialPre
 import { defaultCustom, normalizeCustom } from '../dieline/custom.js';
 import { asset } from '../asset.js';
 import { saveFile } from '../platform.js';
-import { preloadMasks } from '../design/layers.js';
+import { preloadMasks, isMaskUrl } from '../design/layers.js';
 
 export const PROJECT_SCHEMA = 'box3d-project';
 export const PROJECT_VERSION = 1;
@@ -64,6 +64,8 @@ export async function projectStateOf(raw, view = 'design') {
   const doc = assertProject(raw);
   const layers = await Promise.all(doc.design.layers.map(async layer => {
     const clean = { ...layer };
+    // Máscara de un archivo externo: solo {url: data:image/…, on}; cualquier otra cosa se descarta.
+    if (clean.mask) clean.mask = clean.mask && isMaskUrl(clean.mask.url) ? { url: clean.mask.url, on: clean.mask.on !== false } : undefined;
     const img = await imageOf(clean.imgSrc);
     return img ? { ...clean, img } : clean;
   }));

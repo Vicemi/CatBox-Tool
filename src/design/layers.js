@@ -89,11 +89,17 @@ export function cacheMask(url, grey) {
   ag.putImageData(d, 0, 0);
   const e = { grey, alpha: a }; maskCache.set(url, e); return e;
 }
+// Solo se aceptan máscaras incrustadas (data:image/…): un proyecto abierto no puede hacer que la app cargue URLs externas.
+export const isMaskUrl = u => typeof u === 'string' && u.startsWith('data:image/');
 export const loadMask = url => new Promise(resolve => {
   const c = maskCache.get(url); if (c) return resolve(c);
-  if (typeof Image === 'undefined') return resolve(null);
+  if (typeof Image === 'undefined' || !isMaskUrl(url)) return resolve(null);
   const im = new Image();
-  im.onload = () => { const g = document.createElement('canvas'); g.width = im.naturalWidth; g.height = im.naturalHeight; g.getContext('2d').drawImage(im, 0, 0); resolve(cacheMask(url, g)); };
+  // Siempre resuelve (aunque falle el decodificado o el canvas): abrir un proyecto no puede quedarse colgado.
+  im.onload = () => {
+    try { const g = document.createElement('canvas'); g.width = im.naturalWidth; g.height = im.naturalHeight; g.getContext('2d').drawImage(im, 0, 0); resolve(cacheMask(url, g)); }
+    catch (_) { resolve(null); }
+  };
   im.onerror = () => resolve(null); im.src = url;
 });
 export const maskEntry = url => maskCache.get(url) || null;
