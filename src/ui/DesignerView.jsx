@@ -29,6 +29,7 @@ import { makePieces } from '../render3d/fold.js';
 import { exportLaserSVG } from '../export/svg.js';
 import { exportPDF } from '../export/pdf.js';
 import { SheetCanvas, SHAPE_MIME } from './SheetCanvas.jsx';
+import { readReferenceFile } from '../dieline/reference.js';
 import { ST, Block, ToggleRow, CmField, MmField, Note, KV, selectSt, btnSt, inputSt } from './widgets.jsx';
 import { fmtCm, fmtMm, SHEETS, sheetOf } from '../units.js';
 import { ask, notify, notifyError } from './dialogs.jsx';
@@ -129,7 +130,21 @@ export function DesignerView() {
   const [selLine, setSelLine] = useState(null);
   const [armed, setArmed] = useState(null);        // forma de la paleta armada como herramienta (clic en un borde)
   const [palShape, setPalShape] = useState('flap'); // forma que ponen los botones «+»
-  const [hoverSide, setHoverSide] = useState(null);  // lado resaltado en el plano desde la lista «Bordes»
+  const [hoverSide, setHoverSide] = useState(null);
+  // Plantilla de referencia bajo la red (se guarda en el proyecto, no se exporta).
+  const [refEdit, setRefEdit] = useState(false);
+  const refInput = useRef(null);
+  const bref = s.builderRef || null;
+  const r2 = v => (typeof v === 'number' ? Math.round(v * 100) / 100 : v); // centésimas de mm
+  const setRef = patch => store.set(st => ({ builderRef: st.builderRef ? { ...st.builderRef, ...Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, r2(v)])) } : null }));
+  const loadRef = async file => {
+    try {
+      const r = await readReferenceFile(file), b = geomOf(store.get(), m.t).sbb;
+      const w = r2(r.w), h = r2(r.h);
+      store.set({ builderRef: { ...r, w, h, w0: w, h0: h, x: r2((b[0] + b[2]) / 2 - w / 2), y: r2((b[1] + b[3]) / 2 - h / 2), opacity: 0.4, visible: true, locked: false } });
+      setRefEdit(true);
+    } catch (err) { notifyError(err); }
+  };  // lado resaltado en el plano desde la lista «Bordes»
   const [step, setStep] = useState(1);
   const [lockType, setLockType] = useState('slot');
   const [lockLen, setLockLen] = useState(0);
@@ -765,6 +780,34 @@ export function DesignerView() {
       </>)}
 
       <Block>
+        <ST>{t('Plantilla de referencia')}</ST>
+        <input ref={refInput} type="file" accept=".dxf,.svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg" style={{ display: 'none' }}
+          onChange={async e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) await loadRef(f); }} />
+        <button onClick={() => refInput.current && refInput.current.click()} style={{ ...btnSt, width: '100%', padding: '7px 0', border: '1px solid #1c6ee0', color: '#1c6ee0', fontWeight: 700 }}>
+          {bref ? t('Cambiar plantilla…') : t('Cargar plantilla (DXF, SVG, PNG, JPG)')}
+        </button>
+        {bref ? (<>
+          <div style={{ fontSize: 10.5, color: '#5c554a', margin: '7px 0 6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={bref.name}>{bref.name} · {fmtMm(bref.w)} × {fmtMm(bref.h)} · {Math.round(bref.w / (bref.w0 || bref.w) * 100)}%</div>
+          <ToggleRow label={t('Mostrar')} on={bref.visible !== false} onClick={() => setRef({ visible: bref.visible === false })} />
+          <ToggleRow label={t('Bloquear')} on={!!bref.locked} onClick={() => { setRef({ locked: !bref.locked }); setRefEdit(false); }} />
+          <ToggleRow label={t('Ajustar en el plano (mover / escalar)')} on={refEdit && !bref.locked} onClick={() => !bref.locked && setRefEdit(v => !v)} />
+          <div style={lbl}>{t('Opacidad')} · {Math.round(bref.opacity * 100)}%</div>
+          <input type="range" min="0.05" max="1" step="0.05" value={bref.opacity} aria-label={t('Opacidad')} onChange={e => setRef({ opacity: +e.target.value })} style={{ width: '100%', accentColor: '#1c6ee0', marginBottom: 6 }} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
+            <MmField label="X" mm={bref.x} min={-5000} max={5000} step={0.5} onChange={v => setRef({ x: v })} />
+            <MmField label="Y" mm={bref.y} min={-5000} max={5000} step={0.5} onChange={v => setRef({ y: v })} />
+            <MmField label={t('Ancho')} mm={bref.w} min={1} max={10000} step={0.5} onChange={v => setRef({ w: v, h: bref.h * v / bref.w })} />
+            <MmField label={t('Escala %')} mm={Math.round(bref.w / (bref.w0 || bref.w) * 1000) / 10} min={1} max={2000} step={1} onChange={v => setRef({ w: (bref.w0 || bref.w) * v / 100, h: (bref.h0 || bref.h) * v / 100 })} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
+            <button onClick={() => setRef({ w: bref.w0 || bref.w, h: bref.h0 || bref.h })} title={t('Tamaño real del archivo (DXF/SVG en mm; imágenes a 96 ppp)')} style={{ ...btnSt, padding: '5px 0', fontSize: 10.5 }}>1:1</button>
+            <button onClick={() => { const b = g.sbb; setRef({ x: (b[0] + b[2]) / 2 - bref.w / 2, y: (b[1] + b[3]) / 2 - bref.h / 2 }); }} style={{ ...btnSt, padding: '5px 0', fontSize: 10.5 }}>{t('Centrar')}</button>
+            <button onClick={() => { store.set({ builderRef: null }); setRefEdit(false); }} style={{ ...btnSt, padding: '5px 0', fontSize: 10.5, color: '#c0492b' }}>{t('Quitar')}</button>
+          </div>
+        </>) : <div style={{ ...hint, marginTop: 7 }}>{t('Pon un troquel o un dibujo debajo de la red para calcar encima. Se guarda con el proyecto y no sale en el corte ni en la impresión.')}</div>}
+      </Block>
+
+      <Block>
         <ST>{t('Material')}</ST>
         <select value={s.matId} onChange={e => setMaterial(e.target.value)} style={selectSt}>
           {MATS.map(mm => <option key={mm.id} value={mm.id}>{mm.name}</option>)}
@@ -810,6 +853,7 @@ export function DesignerView() {
       armedShape={isNet ? armed : null}
       onEdgePick={isNet ? (tg => attachAt(tg, armed || palShape)) : undefined}
       onShapeDrop={isNet ? dropShape : undefined}
+      refLayer={bref} refEdit={refEdit} onRefChange={setRef}
       vertexEdit={vertexEdit}
       sideHighlight={hoverSide && netPanelNode ? [mapLocal(netPanelNode, ...hoverSide.a), mapLocal(netPanelNode, ...hoverSide.b)] : null} />
 

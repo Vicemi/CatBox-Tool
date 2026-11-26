@@ -55,7 +55,7 @@ const segDist = (p, a, b) => {
   return Math.hypot(p[0] - a[0] - u * dx, p[1] - a[1] - u * dy);
 };
 //  · vertexEdit {pts (mundo), fixed[], onMove(i, pt), onInsert(i, pt), onDelete(i)} — forma libre: vértices editables
-export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanelClick, extraLines, onLineDrag, selLineId, panelShiftInfo, onPanelShift, selFrame, onPanelResize, edgeTargets, armedShape, onEdgePick, onShapeDrop, vertexEdit, sideHighlight }) {
+export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanelClick, extraLines, onLineDrag, selLineId, panelShiftInfo, onPanelShift, selFrame, onPanelResize, edgeTargets, armedShape, onEdgePick, onShapeDrop, vertexEdit, sideHighlight, refLayer, refEdit, onRefChange }) {
   const s = useStore();
   const t = useT();
   const elRef = useRef(null);
@@ -184,6 +184,15 @@ export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanel
       if (!e.altKey) { v = Math.abs(v) < 2 / kk ? 0 : r1(v); } // imán al centro del borde; Alt = libre
       onPanelShift && onPanelShift(d.id, v);
       setHud(t('Desplazamiento') + ' ' + fmt1(v) + ' mm' + (v === 0 ? ' · ' + t('centrada') : ''));
+      return;
+    }
+    if (d.type === 'refMove' || d.type === 'refScale') {
+      // Plantilla de referencia: mover, o escalar desde la esquina (proporcional; Alt = libre).
+      const p = mmPt(e), dx = p[0] - d.start[0], dy = p[1] - d.start[1], r0 = d.r0;
+      if (d.type === 'refMove') { onRefChange && onRefChange({ x: r1(r0.x + dx), y: r1(r0.y + dy) }); setHud('X ' + fmt1(r0.x + dx) + ' · Y ' + fmt1(r0.y + dy) + ' mm'); return; }
+      let w = Math.max(2, r0.w + dx), h = Math.max(2, r0.h + dy);
+      if (!e.altKey) { const k2 = Math.max(w / r0.w, h / r0.h); w = r0.w * k2; h = r0.h * k2; }
+      onRefChange && onRefChange({ w: r1(w), h: r1(h) }); setHud(fmt1(w) + ' × ' + fmt1(h) + ' mm · ' + Math.round(w / r0.w * 100) + '%');
       return;
     }
     if (d.type === 'vertex') {
@@ -473,6 +482,7 @@ export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanel
         )}
         <g transform={'translate(' + s.tx + ' ' + s.ty + ') scale(' + k + ')'}>
           {view === 'structure' && (<>
+            {refLayer && refLayer.visible !== false && <image href={refLayer.src} x={refLayer.x} y={refLayer.y} width={refLayer.w} height={refLayer.h} opacity={refLayer.opacity} preserveAspectRatio="none" style={{ pointerEvents: 'none' }} />}
             {s.show.bleed && s.bleed > 0 && <path d={g.fillPath} fill="none" stroke="rgba(154,91,31,0.22)" strokeWidth={s.bleed * 2} strokeLinejoin="round" strokeLinecap="round" />}
             <path d={g.fillPath} fill="#fdfcf7" stroke="none" />
             {s.show.safe && <path d={g.safePath} fill="none" stroke="#c9a227" strokeWidth={0.45} strokeDasharray="2.2 1.8" />}
@@ -611,6 +621,16 @@ export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanel
                 </g>
               );
             })}
+            {refLayer && refEdit && !refLayer.locked && refLayer.visible !== false && (
+              // Modo «ajustar plantilla»: la referencia queda encima para moverla (arrastrar) y escalarla (esquina).
+              <g>
+                <image href={refLayer.src} x={refLayer.x} y={refLayer.y} width={refLayer.w} height={refLayer.h} opacity={Math.max(0.5, refLayer.opacity)} preserveAspectRatio="none" style={{ pointerEvents: 'none' }} />
+                <rect x={refLayer.x} y={refLayer.y} width={refLayer.w} height={refLayer.h} fill="rgba(28,110,224,0.04)" stroke="#1c6ee0" strokeWidth={1.5} strokeDasharray="6 4" style={{ vectorEffect: 'non-scaling-stroke', cursor: 'move' }}
+                  onPointerDown={e => startDrag(e, { type: 'refMove', start: mmPt(e), r0: { ...refLayer } })} />
+                <rect x={refLayer.x + refLayer.w - 5 / k} y={refLayer.y + refLayer.h - 5 / k} width={10 / k} height={10 / k} fill="#fff" stroke="#1c6ee0" strokeWidth={2 / k} style={{ cursor: 'nwse-resize' }}
+                  onPointerDown={e => startDrag(e, { type: 'refScale', start: mmPt(e), r0: { ...refLayer } })}><title>{t('Escalar la plantilla (Alt = sin mantener proporción)')}</title></rect>
+              </g>
+            )}
             {s.show.labels && <g>{g.labels.map((p, i) => <text key={i} x={p.x} y={p.y} fontSize={p.fs} textAnchor="middle" style={{ fill: '#a59a85', fontWeight: 500, userSelect: 'none' }}>{p.name}</text>)}</g>}
             {s.show.dims && <g>{g.dims.map((d, i) => (
               <g key={i} transform={d.gtf}>

@@ -1,6 +1,18 @@
 // Traducciones del área «designer» (Mi caja, checks.js y nombres de custom.js/shapes.js). Clave = texto en español; valor = traducción.
 export default {
   en: {
+    'Plantilla de referencia': 'Reference template',
+    'Cambiar plantilla…': 'Change template…',
+    'Cargar plantilla (DXF, SVG, PNG, JPG)': 'Load template (DXF, SVG, PNG, JPG)',
+    'Mostrar': 'Show',
+    'Bloquear': 'Lock',
+    'Ajustar en el plano (mover / escalar)': 'Adjust on the sheet (move / scale)',
+    'Opacidad': 'Opacity',
+    'Escala %': 'Scale %',
+    'Tamaño real del archivo (DXF/SVG en mm; imágenes a 96 ppp)': 'Actual file size (DXF/SVG in mm; images at 96 dpi)',
+    'Quitar': 'Remove',
+    'Pon un troquel o un dibujo debajo de la red para calcar encima. Se guarda con el proyecto y no sale en el corte ni en la impresión.': 'Put a dieline or a drawing under the net to trace over it. It is saved with the project and never goes to the cut or the print.',
+    'Escalar la plantilla (Alt = sin mantener proporción)': 'Scale the template (Alt = free proportions)',
     'Arrastra para curvar · suelta sobre la recta para enderezar · Alt = sin imán': 'Drag to curve · drop on the straight line to straighten · Alt = no snap',
     'Curva activa · arrastra el rombo': 'Curve on · drag the diamond',
     'Curvar': 'Curve',
@@ -342,6 +354,18 @@ export default {
     'Lateral derecho': 'Right side'
   },
   zh: {
+    'Plantilla de referencia': '参考模板',
+    'Cambiar plantilla…': '更换模板…',
+    'Cargar plantilla (DXF, SVG, PNG, JPG)': '载入模板（DXF、SVG、PNG、JPG）',
+    'Mostrar': '显示',
+    'Bloquear': '锁定',
+    'Ajustar en el plano (mover / escalar)': '在画布上调整（移动/缩放）',
+    'Opacidad': '不透明度',
+    'Escala %': '缩放 %',
+    'Tamaño real del archivo (DXF/SVG en mm; imágenes a 96 ppp)': '文件实际尺寸（DXF/SVG 以毫米计；图片按 96 dpi）',
+    'Quitar': '移除',
+    'Pon un troquel o un dibujo debajo de la red para calcar encima. Se guarda con el proyecto y no sale en el corte ni en la impresión.': '在展开图下放置刀版或图纸以便描摹。它随项目保存，不会进入切割或印刷。',
+    'Escalar la plantilla (Alt = sin mantener proporción)': '缩放模板（Alt = 不保持比例）',
     'Arrastra para curvar · suelta sobre la recta para enderezar · Alt = sin imán': '拖动以弯曲 · 放回直线上即可拉直 · Alt = 不吸附',
     'Curva activa · arrastra el rombo': '已弯曲 · 拖动菱形手柄',
     'Curvar': '弯曲',

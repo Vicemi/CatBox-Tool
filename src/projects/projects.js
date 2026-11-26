@@ -19,6 +19,13 @@ const cleanLayer = layer => {
 const newId = () => crypto.randomUUID ? crypto.randomUUID() : 'project-' + Date.now().toString(36);
 const now = () => new Date().toISOString();
 
+// Plantilla de referencia del constructor: solo imágenes incrustadas (data:image/…) y números finitos.
+function cleanRef(r) {
+  if (!r || typeof r.src !== 'string' || !r.src.startsWith('data:image/')) return null;
+  const n = (v, d) => (Number.isFinite(+v) ? +v : d);
+  return { src: r.src, name: String(r.name || '').slice(0, 120), x: n(r.x, 0), y: n(r.y, 0), w: Math.max(1, n(r.w, 100)), h: Math.max(1, n(r.h, 100)), w0: Math.max(1, n(r.w0, n(r.w, 100))), h0: Math.max(1, n(r.h0, n(r.h, 100))), opacity: Math.min(1, Math.max(0.05, n(r.opacity, 0.4))), visible: r.visible !== false, locked: r.locked === true };
+}
+
 export function makeProject(state, meta = {}) {
   const time = now();
   return {
@@ -33,7 +40,7 @@ export function makeProject(state, meta = {}) {
         ? state.projectThumbnail
         : (typeof meta.thumbnail === 'string' ? meta.thumbnail : '')
     },
-    box: copyFields(state, BOX_FIELDS),
+    box: { ...copyFields(state, BOX_FIELDS), builderRef: cleanRef(state.builderRef) },
     design: { layers: state.layers.map(cleanLayer), seq: state.seq, groups: structuredClone(state.groups || []) },
     appearance: {
       material: normalizeMaterial(state),
@@ -72,6 +79,7 @@ export async function projectStateOf(raw, view = 'design') {
   await preloadMasks(layers); // las máscaras deben estar decodificadas antes del primer dibujo/horneado
   return {
     ...copyFields(doc.box, BOX_FIELDS),
+    builderRef: cleanRef(doc.box.builderRef),
     custom: doc.box.custom ? normalizeCustom(doc.box.custom) : defaultCustom(),
     wrap: doc.box.wrap ? structuredClone(doc.box.wrap) : { flap: 0, outer: 0, inner: 0, tab: 12, slot: 20, slotW: 1.2, sideTab: 0 },
     layers,
