@@ -48,7 +48,10 @@ CatBox Tool adapta OpenBox3D al español, inglés y chino, suma herramientas par
 - **Diseño estilo Photoshop**: barra de herramientas con atajos (mover, texto, formas, imagen, mano, zoom, cuentagotas), transformar con tiradores, panel de capas (reordenar, bloquear, opacidad, modos de fusión), alinear y distribuir, selección múltiple y transformación en grupo, degradados, sombras, contorno de texto, máscara de recorte, **grupos de capas**, **máscaras de capa pintables** (no destructivas), guías inteligentes y portapapeles.
   - **Pensado para caras no rectangulares**: fondo con la forma exacta de la cara (triángulo, hexágono…), rellenar o ajustar a la cara real, centrar en el centroide y alinear con un borde.
   - Acabados por capa (oro/plata, UV, brillo, holográfico, relieve). Cada capa se recorta a la cara a la que pertenece.
-- **Editor de imágenes**: capas, pincel, borrador, formas, texto, recorte, ajustes y quitar fondo.
+- **Editor de fotos**: selecciones (marco, lazo, varita), pinceles, tampón de clonar, degradado, bote de pintura, desenfocar/enfocar/dedo, sobreexponer/subexponer, capas de ajuste (niveles, curvas, tono/saturación…), filtros, máscaras de capa, 16 modos de fusión e historial.
+- **Módulos de IA descargables** (se bajan una vez y quedan guardados): ampliar ×2/×4 (waifu2x, Real-ESRGAN), reducir ruido y quitar fondo (U²-Netp), sin GPU.
+- **Tipografías del sistema**: el selector de fuentes lista las instaladas en el equipo, con búsqueda y vista previa.
+- **Plantilla de referencia en Mi caja**: un DXF, SVG, PNG o JPG semitransparente bajo la red para calcar encima; se mueve, escala y bloquea.
 - **Vista 3D**: materiales PBR y plegado paso a paso, con la misma silueta que el troquel 2D. Renderiza solo cuando algo cambia: sin consumo en reposo y repintado de capas en ~30 ms.
 - **Producción**: SVG láser 1:1 y **DXF R12 y AutoCAD 2000** con capas CORTE (rojo), MARCADO (azul) y PUNTEADO (azul, partido en trazos reales de 3/2 mm), PDF para imprenta con sangrado y separaciones, y nesting de varias cajas por plancha.
 - **Proyectos** `.boxproj` locales (sin servidor, cuenta ni telemetría). Se pueden abrir por URL: `?project=/ruta/archivo.boxproj`.
@@ -95,7 +98,10 @@ CatBox Tool ports OpenBox3D to Spanish, English and Chinese, and adds more box-b
 - **Photoshop-style design**: toolbar with shortcuts (move, text, shapes, image, hand, zoom, eyedropper), on-canvas transform, layers panel (reorder, lock, opacity, blend modes), align and distribute, multi-select and group transform, gradients, drop shadows, text outline, clipping mask, **layer groups**, **paintable layer masks** (non-destructive), smart guides and clipboard.
   - **Built for non-rectangular faces**: a background with the exact face outline (triangle, hexagon…), fill or fit to the real face, centre on the centroid and align to an edge.
   - Per-layer finishes (gold/silver foil, spot UV, gloss, holographic, emboss). Each layer is clipped to the face it belongs to.
-- **Image editor**: layers, brush, eraser, shapes, text, crop, adjustments and background removal.
+- **Photo editor**: selections (marquee, lasso, magic wand), brushes, clone stamp, gradient, paint bucket, blur/sharpen/smudge, dodge/burn, adjustment layers (levels, curves, hue/saturation…), filters, layer masks, 16 blend modes and history.
+- **Downloadable AI modules** (downloaded once and kept): upscale ×2/×4 (waifu2x, Real-ESRGAN), denoise and background removal (U²-Netp), no GPU needed.
+- **System fonts**: the font picker lists the fonts installed on the computer, with search and preview.
+- **Reference template in My box**: a semi-transparent DXF, SVG, PNG or JPG under the net to trace over; move, scale and lock it.
 - **3D preview**: PBR materials and step-by-step folding, with the same outline as the 2D dieline. Renders only when something changes: no load while idle and layer repaints in ~30 ms.
 - **Production output**: 1:1 laser SVG and **DXF R12 and AutoCAD 2000** with CORTE (red, cut), MARCADO (blue, crease) and PUNTEADO (blue, perforation split into real 3/2 mm dashes) layers, print PDF with bleed and separations, and nesting of several boxes per sheet.
 - **Projects**: local `.boxproj` files (no server, no account, no telemetry). Open one by URL: `?project=/path/file.boxproj`.
