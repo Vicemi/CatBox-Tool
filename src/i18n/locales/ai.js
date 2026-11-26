@@ -1,0 +1,47 @@
+// Traducciones del área «módulos IA». Clave = texto en español.
+export default {
+  en: {
+    'Módulos IA': 'AI modules', 'IA': 'AI', 'Cerrar': 'Close', 'Descargar': 'Download', 'Eliminar': 'Remove', 'Licencia': 'License', 'Cancelar': 'Cancel',
+    'Modelos ligeros que se descargan una vez y funcionan sin conexión en tu equipo. Se guardan en el almacenamiento local de la app.': "Lightweight models downloaded once that run offline on your computer. They are stored in the app's local storage.",
+    'Espacio en disco usado: {n} MB': 'Disk space used: {n} MB',
+    'Descargar módulo ({n} MB)': 'Download module ({n} MB)',
+    'Ampliar': 'Upscale', 'Quitar fondo': 'Remove background', 'Reducir ruido': 'Reduce noise',
+    'Ampliar ×2 · foto (waifu2x)': 'Upscale ×2 · photo (waifu2x)', 'Ampliar ×2 · ilustración (waifu2x)': 'Upscale ×2 · illustration (waifu2x)',
+    'Ampliar ×4 (Real-ESRGAN)': 'Upscale ×4 (Real-ESRGAN)', 'Quitar fondo (IA)': 'Remove background (AI)',
+    'Ampliado ×2 (IA)': 'Upscaled ×2 (AI)', 'Ampliado ×4 (IA)': 'Upscaled ×4 (AI)', 'Fondo quitado (IA)': 'Background removed (AI)', 'Ruido reducido (IA)': 'Noise reduced (AI)',
+    'waifu2x Foto ×2': 'waifu2x Photo ×2', 'waifu2x Ilustración ×2': 'waifu2x Illustration ×2', 'Real-ESRGAN General ×4': 'Real-ESRGAN General ×4',
+    'waifu2x Reducir ruido (foto)': 'waifu2x Noise reduction (photo)', 'U²-Netp Quitar fondo': 'U²-Netp Background removal',
+    'Amplía fotografías ×2 y suaviza ruido/artefactos leves (swin_unet, ruido 1).': 'Upscales photos ×2 and softens mild noise/artifacts (swin_unet, noise 1).',
+    'Amplía ilustraciones, logos y dibujos ×2 (cunet, ruido 1). Muy ligero y rápido.': 'Upscales illustrations, logos and drawings ×2 (cunet, noise 1). Very light and fast.',
+    'Amplía ×4 imágenes generales (fotos y gráficos) con realesr-general-x4v3.': 'Upscales general images (photos and graphics) ×4 with realesr-general-x4v3.',
+    'Reduce ruido y artefactos JPEG en fotos sin cambiar el tamaño (swin_unet, ruido 2).': 'Reduces noise and JPEG artifacts in photos without changing the size (swin_unet, noise 2).',
+    'Segmentación de primer plano para recortar el fondo (genera transparencia).': 'Foreground segmentation to cut out the background (produces transparency).',
+    'No se pudo descargar el módulo (HTTP {n})': 'Could not download the module (HTTP {n})',
+    'Descarga incompleta o dañada ({a} de {b} bytes)': 'Incomplete or corrupted download ({a} of {b} bytes)',
+    'La suma de comprobación del módulo no coincide': 'The module checksum does not match',
+    'Imagen vacía': 'Empty image', 'Módulo no instalado: {n}': 'Module not installed: {n}',
+    'La imagen resultante sería demasiado grande ({w}×{h}). Reduce la imagen o usa un módulo ×2.': 'The resulting image would be too large ({w}×{h}). Shrink the image or use a ×2 module.'
+  },
+  zh: {
+    'Módulos IA': 'AI 模块', 'IA': 'AI', 'Cerrar': '关闭', 'Descargar': '下载', 'Eliminar': '删除', 'Licencia': '许可证', 'Cancelar': '取消',
+    'Modelos ligeros que se descargan una vez y funcionan sin conexión en tu equipo. Se guardan en el almacenamiento local de la app.': '轻量模型只需下载一次，即可在本机离线运行，并保存在应用的本地存储中。',
+    'Espacio en disco usado: {n} MB': '已用磁盘空间：{n} MB',
+    'Descargar módulo ({n} MB)': '下载模块（{n} MB）',
+    'Ampliar': '放大', 'Quitar fondo': '去除背景', 'Reducir ruido': '降噪',
+    'Ampliar ×2 · foto (waifu2x)': '放大 ×2 · 照片（waifu2x）', 'Ampliar ×2 · ilustración (waifu2x)': '放大 ×2 · 插画（waifu2x）',
+    'Ampliar ×4 (Real-ESRGAN)': '放大 ×4（Real-ESRGAN）', 'Quitar fondo (IA)': '去除背景（AI）',
+    'Ampliado ×2 (IA)': '已放大 ×2（AI）', 'Ampliado ×4 (IA)': '已放大 ×4（AI）', 'Fondo quitado (IA)': '已去除背景（AI）', 'Ruido reducido (IA)': '已降噪（AI）',
+    'waifu2x Foto ×2': 'waifu2x 照片 ×2', 'waifu2x Ilustración ×2': 'waifu2x 插画 ×2', 'Real-ESRGAN General ×4': 'Real-ESRGAN 通用 ×4',
+    'waifu2x Reducir ruido (foto)': 'waifu2x 降噪（照片）', 'U²-Netp Quitar fondo': 'U²-Netp 去除背景',
+    'Amplía fotografías ×2 y suaviza ruido/artefactos leves (swin_unet, ruido 1).': '将照片放大 ×2 并柔化轻微噪点/伪影（swin_unet，噪点 1）。',
+    'Amplía ilustraciones, logos y dibujos ×2 (cunet, ruido 1). Muy ligero y rápido.': '将插画、徽标和绘图放大 ×2（cunet，噪点 1）。非常轻巧快速。',
+    'Amplía ×4 imágenes generales (fotos y gráficos) con realesr-general-x4v3.': '使用 realesr-general-x4v3 将通用图像（照片和图形）放大 ×4。',
+    'Reduce ruido y artefactos JPEG en fotos sin cambiar el tamaño (swin_unet, ruido 2).': '在不改变尺寸的情况下减少照片噪点和 JPEG 伪影（swin_unet，噪点 2）。',
+    'Segmentación de primer plano para recortar el fondo (genera transparencia).': '前景分割，用于抠除背景（生成透明度）。',
+    'No se pudo descargar el módulo (HTTP {n})': '无法下载模块（HTTP {n}）',
+    'Descarga incompleta o dañada ({a} de {b} bytes)': '下载不完整或已损坏（{a} / {b} 字节）',
+    'La suma de comprobación del módulo no coincide': '模块校验和不匹配',
+    'Imagen vacía': '图像为空', 'Módulo no instalado: {n}': '模块未安装：{n}',
+    'La imagen resultante sería demasiado grande ({w}×{h}). Reduce la imagen o usa un módulo ×2.': '结果图像将过大（{w}×{h}）。请缩小图像或使用 ×2 模块。'
+  }
+};

@@ -8,8 +8,9 @@ import design from './locales/design.js';
 import three from './locales/three.js';
 import output from './locales/output.js';
 import editor from './locales/editor.js';
+import ai from './locales/ai.js';
 
-const DICTS = [core, structure, designer, design, three, output, editor];
+const DICTS = [core, structure, designer, design, three, output, editor, ai];
 export const LANGS = [['es', 'Español'], ['en', 'English'], ['zh', '中文']];
 
 export function tr(lang, key, vars) {

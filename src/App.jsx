@@ -17,15 +17,17 @@ import { chooseProjectFile, downloadProject, projectStateOf } from './projects/p
 import { fmtCm, fmtMm } from './units.js';
 import { useT, setLang, LANGS } from './i18n/index.js';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { IconRuler2, IconBox, IconPalette, IconCube, IconPrinter, IconFolderOpen, IconDeviceFloppy, IconRestore, IconFileTypePdf, IconBrandGithub, IconLanguage, IconCircleCheck, IconAlertTriangle } from '@tabler/icons-react';
+import { IconRuler2, IconBox, IconPalette, IconCube, IconPrinter, IconFolderOpen, IconDeviceFloppy, IconRestore, IconFileTypePdf, IconBrandGithub, IconLanguage, IconCircleCheck, IconAlertTriangle, IconSparkles } from '@tabler/icons-react';
 import { openExternal } from './platform.js';
 import { DialogHost, ask, notifyError } from './ui/dialogs.jsx';
+import { AIModulesDialog } from './ui/AIModules.jsx';
 
 const REPO_URL = 'https://github.com/yuyou-dev/OpenBox3D'; // proyecto original en el que se basa CatBox Tool
 
 export function App() {
   const s = useStore();
   const t = useT();
+  const [aiOpen, setAiOpen] = React.useState(false);
   const m = store.mat();
   const g = geomOf(s, m.t);
   const sw = g.sbb[2] - g.sbb[0], sh = g.sbb[3] - g.sbb[1];
@@ -83,6 +85,7 @@ export function App() {
         <button onClick={importProject} style={hb}><IconFolderOpen size={15} />{t('Importar')}</button>
         <button onClick={exportProject} style={hb}><IconDeviceFloppy size={15} />{t('Guardar')}</button>
         <button onClick={resetPreset} title={t('Volver a la caja de ejemplo incluida')} style={hb}><IconRestore size={15} />{t('Ejemplo')}</button>
+        <button onClick={() => setAiOpen(true)} title={t('Módulos IA')} style={hb}><IconSparkles size={15} />{t('Módulos IA')}</button>
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild><button aria-label={t('Idioma')} style={hb}><IconLanguage size={15} />{s.lang.toUpperCase()}</button></DropdownMenu.Trigger>
           <DropdownMenu.Portal>
@@ -115,6 +118,7 @@ export function App() {
         <span style={{ color: '#9a5b1f', fontWeight: 700 }}>{t('Unidad: cm')}</span>
       </div>
       <DialogHost />
+      <AIModulesDialog open={aiOpen} onClose={() => setAiOpen(false)} />
     </div>
   );
 }
