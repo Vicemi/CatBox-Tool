@@ -585,16 +585,28 @@ export function SheetCanvas({ view, g, children, onImageDrop, highlight, onPanel
                   </g>
                 );
               }
+              // Recta o curva (l.curve = puntos muestreados de la Bézier): misma polilínea para dibujar y para el área de arrastre.
+              const d = 'M' + (l.curve || l.pts).map(p => p[0] + ' ' + p[1]).join('L');
+              const slotW = l.kind === 'slot' && l.w > 0 ? l.w : 0;
               return (
                 <g key={l.id}>
-                  {on && <line x1={l.pts[0][0]} y1={l.pts[0][1]} x2={l.pts[1][0]} y2={l.pts[1][1]} stroke="#1c6ee0" strokeWidth={5} strokeOpacity={0.35} style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />}
-                  <line x1={l.pts[0][0]} y1={l.pts[0][1]} x2={l.pts[1][0]} y2={l.pts[1][1]} stroke={col} strokeWidth={1.5} strokeDasharray={l.kind === 'crease' ? '4 2' : l.kind === 'perf' ? '5 3' : undefined} style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />
+                  {on && <path d={d} fill="none" stroke="#1c6ee0" strokeWidth={5} strokeOpacity={0.35} style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />}
+                  {slotW > 0 && <path d={d} fill="none" stroke={col} strokeOpacity={0.25} strokeWidth={slotW} strokeLinecap={l.round ? 'round' : 'butt'} style={{ pointerEvents: 'none' }} />}
+                  <path d={d} fill="none" stroke={col} strokeWidth={1.5} strokeDasharray={l.kind === 'crease' ? '4 2' : l.kind === 'perf' ? '5 3' : undefined} style={{ vectorEffect: 'non-scaling-stroke', pointerEvents: 'none' }} />
                   {onLineDrag && <>
-                    <line x1={l.pts[0][0]} y1={l.pts[0][1]} x2={l.pts[1][0]} y2={l.pts[1][1]} stroke="rgba(0,0,0,0.001)" strokeWidth={11 / k} style={{ cursor: 'move' }} onPointerDown={e => { onLineDrag({ phase: 'start', id: l.id }); ls(e); }} />
+                    <path d={d} fill="none" stroke="rgba(0,0,0,0.001)" strokeWidth={11 / k} style={{ cursor: 'move' }} onPointerDown={e => { onLineDrag({ phase: 'start', id: l.id }); ls(e); }} />
                     {l.pts.map((p, i) => (
                       <circle key={i} cx={p[0]} cy={p[1]} r={(on ? 7 : 5.5) / k} fill="#fff" stroke={col} strokeWidth={1.8 / k} style={{ cursor: 'crosshair' }}
                         onPointerDown={e => { onLineDrag({ phase: 'start', id: l.id }); startDrag(e, { type: 'line', lineId: l.id, index: i, start: mmPt(e) }); }} />
                     ))}
+                    {l.mid && (
+                      // Tirador central (rombo): arrástralo para curvar la línea o ranura, como en Corel; suéltalo sobre la recta para enderezarla.
+                      <rect x={l.mid[0] - 4.5 / k} y={l.mid[1] - 4.5 / k} width={9 / k} height={9 / k} transform={'rotate(45 ' + l.mid[0] + ' ' + l.mid[1] + ')'}
+                        fill={l.curve ? col : '#fff'} stroke={col} strokeWidth={1.6 / k} style={{ cursor: 'grab' }}
+                        onPointerDown={e => { onLineDrag({ phase: 'start', id: l.id }); startDrag(e, { type: 'line', lineId: l.id, index: 'mid', start: mmPt(e) }); }}>
+                        <title>{t('Arrastra para curvar · suelta sobre la recta para enderezar · Alt = sin imán')}</title>
+                      </rect>
+                    )}
                   </>}
                 </g>
               );

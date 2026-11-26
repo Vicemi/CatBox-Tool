@@ -155,7 +155,7 @@ export function normalizeCustom(raw) {
       shift: clamp(num(p.shift, 0), -2000, 2000),
       align: ['start', 'center', 'end'].includes(p.align) ? p.align : 'center',
       role: p.role === 'hero' ? 'hero' : 'design',
-      slits: Array.isArray(p.slits) ? p.slits.filter(q => q && [q.x1, q.y1, q.x2, q.y2].every(Number.isFinite)).map(q => ({ x1: +q.x1, y1: +q.y1, x2: +q.x2, y2: +q.y2, w: clamp(num(q.w, 1.2), 0, 20), round: q.round === true || undefined })) : [],
+      slits: Array.isArray(p.slits) ? p.slits.filter(q => q && [q.x1, q.y1, q.x2, q.y2].every(Number.isFinite)).map(q => ({ x1: +q.x1, y1: +q.y1, x2: +q.x2, y2: +q.y2, w: clamp(num(q.w, 1.2), 0, 20), round: q.round === true || undefined, ...ctrlOf(q) })) : [],
       folds: Array.isArray(p.folds) ? p.folds.filter(q => Array.isArray(q) && q.length === 2 && q[0] && q[1] && [q[0][0], q[0][1], q[1][0], q[1][1]].every(Number.isFinite)).map(q => [[+q[0][0], +q[0][1]], [+q[1][0], +q[1][1]]]) : []
     });
   }
@@ -181,7 +181,8 @@ export function normalizeCustom(raw) {
     kind: ['cut', 'crease', 'perf', 'slot', 'hole'].includes(l.kind) ? l.kind : 'cut',
     x1: +l.x1, y1: +l.y1, x2: +l.x2, y2: +l.y2,
     w: clamp(num(l.w, l.kind === 'slot' ? 1.2 : l.kind === 'hole' ? 10 : 0), 0, l.kind === 'hole' ? 2000 : 20),
-    round: l.round === true || undefined // ranura con extremos redondeados
+    round: l.round === true || undefined, // ranura con extremos redondeados
+    ...ctrlOf(l) // punto de control: línea/ranura curva
   }));
   const mode = r.mode === 'net' ? 'net' : 'box';
   if (mode === 'net' && !panels.length) {
@@ -603,7 +604,7 @@ export function genCustom(ctx, state, t) {
     if (len < 0.01) return;
     const loc = cutoutLocal(s);
     if (loc) ctx.encaje([...loc, loc[0]].map(p => mapLocal(n, p[0], p[1])), { panelId: n.id, kind: 'encaje', len, w: s.w });
-    else ctx.encaje([mapLocal(n, s.x1, s.y1), mapLocal(n, s.x2, s.y2)], { panelId: n.id, kind: 'encaje', len, w: 0 });
+    else ctx.encaje(linePts(s).map(p => mapLocal(n, p[0], p[1])), { panelId: n.id, kind: 'encaje', len, w: 0 });
   };
   for (const n of nodes) for (const s of (n.slits || [])) drawSlot(n, s);
 
@@ -613,14 +614,44 @@ export function genCustom(ctx, state, t) {
     if (!n) continue;
     if (l.kind === 'slot') drawSlot(n, l);
     else if (l.kind === 'hole') { const loc = cutoutLocal(l); if (loc) ctx.cut([...loc, loc[0]].map(p => mapLocal(n, p[0], p[1]))); }
-    else if (l.kind === 'crease') ctx.crease([mapLocal(n, l.x1, l.y1), mapLocal(n, l.x2, l.y2)]);
-    else if (l.kind === 'perf') ctx.perf([mapLocal(n, l.x1, l.y1), mapLocal(n, l.x2, l.y2)]);
-    else ctx.cut([mapLocal(n, l.x1, l.y1), mapLocal(n, l.x2, l.y2)]);
+    else { const pts = linePts(l).map(p => mapLocal(n, p[0], p[1])); if (l.kind === 'crease') ctx.crease(pts); else if (l.kind === 'perf') ctx.perf(pts); else ctx.cut(pts); }
   }
 
   ctx.dimH(bbox[0], bbox[2], bbox[3] + 9, ctx.fmt(bbox[2] - bbox[0]));
   ctx.dimV(bbox[1], bbox[3], bbox[0] - 8, ctx.fmt(bbox[3] - bbox[1]));
   return lay;
+}
+
+// —— Líneas y ranuras curvas: curva de Bézier cuadrática con punto de control (qx, qy) en coordenadas de la cara. ——
+export const isCurved = l => Number.isFinite(l.qx) && Number.isFinite(l.qy);
+function ctrlOf(l) { return Number.isFinite(+l.qx) && Number.isFinite(+l.qy) && l.qx !== null && l.qy !== null ? { qx: +l.qx, qy: +l.qy } : {}; }
+const bez = (l, t) => { const u = 1 - t; return [u * u * l.x1 + 2 * u * t * l.qx + t * t * l.x2, u * u * l.y1 + 2 * u * t * l.qy + t * t * l.y2]; };
+/** Puntos de la línea (recta: sus 2 extremos; curva: muestreada). */
+export function linePts(l, N) {
+  if (!isCurved(l)) return [[l.x1, l.y1], [l.x2, l.y2]];
+  const len = Math.hypot(l.qx - l.x1, l.qy - l.y1) + Math.hypot(l.x2 - l.qx, l.y2 - l.qy);
+  const n = N || Math.max(12, Math.min(64, Math.round(len / 1.5)));
+  return Array.from({ length: n + 1 }, (_, i) => bez(l, i / n));
+}
+/** Punto medio de la curva (t = 0,5): es el tirador que se arrastra para curvarla. */
+export const lineMid = l => (isCurved(l) ? bez(l, 0.5) : [(l.x1 + l.x2) / 2, (l.y1 + l.y2) / 2]);
+/** Punto de control que hace pasar la curva por `m` en t = 0,5. */
+export const ctrlThrough = (l, m) => ({ qx: 2 * m[0] - (l.x1 + l.x2) / 2, qy: 2 * m[1] - (l.y1 + l.y2) / 2 });
+// Ranura curva con ancho: la curva desplazada ±w/2 a cada lado (y extremos redondeados si round).
+function curvedSlot(s) {
+  const P = linePts(s), h = s.w / 2, L = [], R = [];
+  for (let i = 0; i < P.length; i++) {
+    const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], d = Math.hypot(dx, dy) || 1;
+    const nx = -dy / d * h, ny = dx / d * h;
+    L.push([P[i][0] + nx, P[i][1] + ny]); R.push([P[i][0] - nx, P[i][1] - ny]);
+  }
+  if (!s.round) return [...L, ...R.reverse()];
+  const cap = (c, from, to) => { // semicírculo de `from` a `to` alrededor de c
+    const a0 = Math.atan2(from[1] - c[1], from[0] - c[0]), out = [];
+    for (let k = 1; k < 8; k++) { const a = a0 - Math.PI * k / 8; out.push([c[0] + h * Math.cos(a), c[1] + h * Math.sin(a)]); }
+    return out;
+  };
+  return [...L, ...cap(P[P.length - 1], L[L.length - 1], R[R.length - 1]), ...R.slice().reverse(), ...cap(P[0], R[0], L[0])];
 }
 
 /**
@@ -630,6 +661,7 @@ export function genCustom(ctx, state, t) {
  * Devuelve null para líneas sin ancho.
  */
 export function cutoutLocal(s) {
+  if (s.kind !== 'hole' && s.w > 0 && isCurved(s)) return curvedSlot(s);
   if (s.kind === 'hole') {
     const r = (s.w || 0) / 2; if (r <= 0.05) return null;
     const N = Math.max(24, Math.min(96, Math.round(r * 4)));

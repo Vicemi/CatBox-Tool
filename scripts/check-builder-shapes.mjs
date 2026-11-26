@@ -1,7 +1,7 @@
 // Self-check for flap profiles, free-form faces and cut-outs.
 // Run: node scripts/check-builder-shapes.mjs
 import assert from 'node:assert/strict';
-import { startFromShape, attachShape, panelEdgeList, customLayout, mapLocal, normalizeCustom, toFreeForm, editVertex, addNetLine, updateNetPanel, cutoutLocal, customPieces, panelSideList, setEdgeBulge, setVertexRadius, setEdgeType } from '../src/dieline/custom.js';
+import { startFromShape, attachShape, panelEdgeList, customLayout, mapLocal, normalizeCustom, toFreeForm, editVertex, addNetLine, updateNetPanel, cutoutLocal, customPieces, panelSideList, setEdgeBulge, setVertexRadius, setEdgeType, isCurved, lineMid, ctrlThrough } from '../src/dieline/custom.js';
 import { geomOf } from '../src/dieline/geom.js';
 
 const T = 0.42;
@@ -116,4 +116,20 @@ for (const shape of ['asym', 'halfdisc', 'quarter', 'round', 'tuck']) {
   const hinge = geom(c2).segs.find(s => s.t === 'crease' && s.panelId === 'p2');
   assert.ok(hinge && hinge.fold === 'M' && hinge.angle === 135, 'mountain fold at 135° marked on the hinge');
 }
-console.log('ok builder shapes: profiles, asymmetric, rounded, free-form, holes, curves, line types, fold marks');
+// 7. Curved slot and curved cut line (quadratic Bézier with a control point).
+{
+  let c = startFromShape(null, st, 'square');
+  c = addNetLine(c, 'p1', 'slot'); c = addNetLine(c, 'p1', 'cut');
+  const [sl, cl] = c.lines;
+  const mid = [(sl.x1 + sl.x2) / 2, sl.y1 + 15];
+  c = normalizeCustom({ ...c, lines: c.lines.map(l => ({ ...l, ...ctrlThrough(l, mid), w: l.kind === 'slot' ? 3 : l.w, round: l.kind === 'slot' })) });
+  assert.ok(isCurved(c.lines[0]) && isCurved(c.lines[1]), 'control points kept');
+  const g = geom(c);
+  const cuts = g.segs.filter(s => s.t === 'cut' && s.pts.length > 10);
+  assert.ok(cuts.length >= 2, 'curved slot outline and curved cut line are sampled polylines');
+  const lm = lineMid(c.lines[1]);
+  assert.ok(Math.abs(lm[0] - mid[0]) < 1e-6 && Math.abs(lm[1] - mid[1]) < 1e-6, 'curve passes through the dragged point');
+  const pieces = customPieces({ ...st, custom: c });
+  assert.ok(JSON.stringify(pieces).includes('"holes"'), 'curved slot is a hole in 3D');
+}
+console.log('ok builder shapes: profiles, asymmetric, rounded, free-form, holes, curves, line types, fold marks, curved slots');

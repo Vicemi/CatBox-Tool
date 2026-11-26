@@ -41,7 +41,7 @@ CatBox Tool adapta OpenBox3D al español, inglés y chino, suma herramientas par
   - **Forma libre**: cualquier cara se convierte en vértices editables (arrastrar, añadir, borrar).
   - **Todo editable**: cada lado puede ser corte, pliegue, punteado o sin línea (también la bisagra), curvarse hacia fuera o hacia dentro, y cada esquina tener su propio radio: una solapa puede ser recta de un lado y redonda del otro.
   - **Plegado**: sentido (valle/monte) y ángulo de cada cara, con marcas V/M y el ángulo en cada bisagra del plano.
-  - **Cortes, pliegues, punteado (perforación), ranuras con extremos redondeados y agujeros circulares**, también visibles como huecos en 3D.
+  - **Cortes, pliegues, punteado (perforación), ranuras con extremos redondeados y agujeros circulares**, también visibles como huecos en 3D. Cualquier línea o ranura se curva arrastrando el rombo de su centro (como en Corel).
 - **Caras de forma libre** en archivos: una cara con `shape: "poly"` lleva su propio contorno en `pts` (mm locales, bisagra de `[0,0]` a `[w,0]`).
 - **Cajas autobloqueantes sin pegamento**: lengüetas tipo hongo que pasan por ranuras de 0,8 mm, trabas de esquina y tapas con solapa de una sola pieza.
 - **Revisión automática**: detecta caras, solapas y ranuras incoherentes y sugiere correcciones.
@@ -88,7 +88,7 @@ CatBox Tool ports OpenBox3D to Spanish, English and Chinese, and adds more box-b
   - **Free form**: turn any face into editable vertices (drag, add, delete).
   - **Everything editable**: each side can be a cut, crease, perforation or no line (the hinge too), curve outward or inward, and every corner can have its own radius: a flap can be straight on one side and round on the other.
   - **Folding**: direction (valley/mountain) and angle per face, with V/M marks and the angle on each hinge of the sheet.
-  - **Cuts, creases, perforation lines, rounded-end slots and circular holes**, also shown as openings in 3D.
+  - **Cuts, creases, perforation lines, rounded-end slots and circular holes**, also shown as openings in 3D. Any line or slot can be curved by dragging the diamond at its centre (like in Corel).
 - **Free-form faces** in files: a face with `shape: "poly"` carries its own outline in `pts` (panel-local mm, hinge from `[0,0]` to `[w,0]`).
 - **Self-locking boxes, no glue**: mushroom tabs through 0.8 mm slits, corner locks and one-piece tuck lids.
 - **Smart checks**: preflight detects inconsistent faces, flaps and slots and suggests fixes.

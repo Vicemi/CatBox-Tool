@@ -1,6 +1,10 @@
 // Traducciones del área «designer» (Mi caja, checks.js y nombres de custom.js/shapes.js). Clave = texto en español; valor = traducción.
 export default {
   en: {
+    'Arrastra para curvar · suelta sobre la recta para enderezar · Alt = sin imán': 'Drag to curve · drop on the straight line to straighten · Alt = no snap',
+    'Curva activa · arrastra el rombo': 'Curve on · drag the diamond',
+    'Curvar': 'Curve',
+    'Enderezar': 'Straighten',
     'Sin línea': 'No line',
     'Quita la línea del troquel (se puede volver a poner eligiéndola de nuevo)': 'Removes the line from the dieline (select it again to bring it back)',
     'Haz clic en una línea para cambiarla entre corte, pliegue y punteado, o quitarla.': 'Click a line to switch it between cut, crease and perforation, or remove it.',
@@ -338,6 +342,10 @@ export default {
     'Lateral derecho': 'Right side'
   },
   zh: {
+    'Arrastra para curvar · suelta sobre la recta para enderezar · Alt = sin imán': '拖动以弯曲 · 放回直线上即可拉直 · Alt = 不吸附',
+    'Curva activa · arrastra el rombo': '已弯曲 · 拖动菱形手柄',
+    'Curvar': '弯曲',
+    'Enderezar': '拉直',
     'Sin línea': '无线',
     'Quita la línea del troquel (se puede volver a poner eligiéndola de nuevo)': '从刀版移除此线（再次选中可恢复）',
     'Haz clic en una línea para cambiarla entre corte, pliegue y punteado, o quitarla.': '点击线条，在切割、折痕、虚线之间切换，或将其移除。',

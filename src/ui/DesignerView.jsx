@@ -18,7 +18,7 @@ import {
   addNetPanel, updateNetPanel, deleteNetPanel, duplicateNetPanel, edgeFree, addLock,
   mapLocal, addNetLine, updateNetLine, deleteNetLine, wrapCustom,
   panelEdgeList, BUILDER_SHAPES, attachShape, startFromShape, toFreeForm, editVertex,
-  panelSideList, setEdgeType, setEdgeBulge, setVertexRadius
+  panelSideList, setEdgeType, setEdgeBulge, setVertexRadius, isCurved, linePts, lineMid, ctrlThrough
 } from '../dieline/custom.js';
 import { SHAPE_OPTIONS, FLAP_SHAPES, shapePath, shapePoints } from '../dieline/shapes.js';
 import { preflightOf, LEVEL_DOT } from '../dieline/checks.js';
@@ -137,6 +137,7 @@ export function DesignerView() {
   const [declined, setDeclined] = useState(false);
   const askedRef = useRef(false);
   const lineOrig = useRef(null);
+  const lineOrigQ = useRef(undefined); // punto de control al empezar a arrastrar una línea
   const engRef = useRef(null);
   const previewS = { ...s, fold };
   const preview = boxPreviewContextOf(previewS, m);
@@ -324,11 +325,18 @@ export function DesignerView() {
   };
   // Líneas editables de la cara: las añadidas a mano, más las ranuras y pliegues que ya trae la cara.
   const lineItems = netPanel ? [
-    ...(c.lines || []).filter(l => l.panelId === netPanel.id).map(l => ({ key: l.id, src: 'line', kind: l.kind, id: l.id, w: l.w, round: l.round, p: [[l.x1, l.y1], [l.x2, l.y2]] })),
-    ...(netPanel.slits || []).map((q, i) => ({ key: 'slit:' + i, src: 'slit', kind: 'slot', i, w: q.w, round: q.round, p: [[q.x1, q.y1], [q.x2, q.y2]] })),
+    ...(c.lines || []).filter(l => l.panelId === netPanel.id).map(l => ({ key: l.id, src: 'line', kind: l.kind, id: l.id, w: l.w, round: l.round, q: isCurved(l) ? [l.qx, l.qy] : null, p: [[l.x1, l.y1], [l.x2, l.y2]] })),
+    ...(netPanel.slits || []).map((q, i) => ({ key: 'slit:' + i, src: 'slit', kind: 'slot', i, w: q.w, round: q.round, q: isCurved(q) ? [q.qx, q.qy] : null, p: [[q.x1, q.y1], [q.x2, q.y2]] })),
     ...(netPanel.folds || []).map((q, i) => ({ key: 'fold:' + i, src: 'fold', kind: 'crease', i, p: q }))
   ] : [];
-  const lineWorld = netPanelNode ? lineItems.map(it => ({ id: it.key, kind: it.kind, r: it.kind === 'hole' ? (it.w || 0) / 2 : undefined, pts: [mapLocal(netPanelNode, ...it.p[0]), mapLocal(netPanelNode, ...it.p[1])] })) : [];
+  // Líneas del plano: extremos, la curva muestreada (si tiene punto de control) y el tirador del centro para curvarla.
+  const lineObj = it => ({ x1: it.p[0][0], y1: it.p[0][1], x2: it.p[1][0], y2: it.p[1][1], ...(it.q ? { qx: it.q[0], qy: it.q[1] } : {}) });
+  const lineWorld = netPanelNode ? lineItems.map(it => ({
+    id: it.key, kind: it.kind, r: it.kind === 'hole' ? (it.w || 0) / 2 : undefined, w: it.w, round: it.round,
+    pts: [mapLocal(netPanelNode, ...it.p[0]), mapLocal(netPanelNode, ...it.p[1])],
+    curve: it.q ? linePts(lineObj(it)).map(p => mapLocal(netPanelNode, ...p)) : null,
+    mid: it.src !== 'fold' && it.kind !== 'hole' ? mapLocal(netPanelNode, ...lineMid(lineObj(it))) : null
+  })) : [];
   // Forma libre: vértices editables en el plano (arrastrar, «+» en el centro de un lado para insertar, doble clic para borrar).
   const vertexEdit = isNet && netPanel && netPanel.shape === 'poly' && netPanel.pts && netPanelNode ? {
     id: netPanel.id,
@@ -414,14 +422,16 @@ export function DesignerView() {
   };
   const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const r1 = v => Math.round(v * 10) / 10;
-  const setItemPts = (key, p0, p1) => {
+  // q: undefined = conserva la curva; null = recta; [x, y] = nuevo punto de control.
+  const setItemPts = (key, p0, p1, q) => {
     const it = lineItems.find(x => x.key === key);
     if (!it || !netPanel) return;
     const [x1, y1, x2, y2] = [p0[0], p0[1], p1[0], p1[1]].map(r1);
+    const qp = q === undefined ? {} : q === null ? { qx: undefined, qy: undefined } : { qx: r1(q[0]), qy: r1(q[1]) };
     patchCustom(cc => {
-      if (it.src === 'line') return updateNetLine(cc, it.id, { x1, y1, x2, y2 });
+      if (it.src === 'line') return updateNetLine(cc, it.id, { x1, y1, x2, y2, ...qp });
       const panels = cc.panels.map(p => p.id !== netPanel.id ? p : it.src === 'slit'
-        ? { ...p, slits: p.slits.map((q, i) => i === it.i ? { ...q, x1, y1, x2, y2 } : q) }
+        ? { ...p, slits: p.slits.map((sl, i) => i === it.i ? { ...sl, x1, y1, x2, y2, ...qp } : sl) }
         : { ...p, folds: p.folds.map((q, i) => i === it.i ? [[x1, y1], [x2, y2]] : q) });
       return normalizeCustom({ ...cc, panels });
     });
@@ -432,14 +442,24 @@ export function DesignerView() {
     const xs = [o[0][0], o[1][0]], ys = [o[0][1], o[1][1]];
     dx = clampN(dx, -Math.min(...xs), node.w - Math.max(...xs));
     dy = clampN(dy, -Math.min(...ys), node.h - Math.max(...ys));
-    setItemPts(it.key, [o[0][0] + dx, o[0][1] + dy], [o[1][0] + dx, o[1][1] + dy]);
+    const q0 = lineOrigQ.current !== undefined && it.key === selLine ? lineOrigQ.current : it.q; // la curva se mueve con la línea
+    setItemPts(it.key, [o[0][0] + dx, o[0][1] + dy], [o[1][0] + dx, o[1][1] + dy], q0 ? [q0[0] + dx, q0[1] + dy] : undefined);
   };
   const onLineDrag = ev => {
     const it = lineItems.find(x => x.key === ev.id), node = netPanelNode;
     if (!it || !node) return;
-    if (ev.phase === 'start') { lineOrig.current = it.p.map(q => q.slice()); setSelLine(ev.id); return; }
+    if (ev.phase === 'start') { lineOrig.current = it.p.map(q => q.slice()); lineOrigQ.current = it.q ? it.q.slice() : null; setSelLine(ev.id); return; }
     const o = lineOrig.current; if (!o) return;
     const lp = localOf(node, ev.pt);
+    if (ev.index === 'mid') {
+      // Tirador del centro: la curva pasa por el punto arrastrado (Bézier cuadrática); muy cerca de la recta, se endereza.
+      const m = [clampN(lp[0], 0, node.w), clampN(lp[1], 0, node.h)], ln = { x1: o[0][0], y1: o[0][1], x2: o[1][0], y2: o[1][1] };
+      const mid0 = [(ln.x1 + ln.x2) / 2, (ln.y1 + ln.y2) / 2];
+      if (!ev.alt && Math.hypot(m[0] - mid0[0], m[1] - mid0[1]) < ev.thr) { setItemPts(it.key, o[0], o[1], null); return; }
+      const cq = ctrlThrough(ln, m);
+      setItemPts(it.key, o[0], o[1], [cq.qx, cq.qy]);
+      return;
+    }
     if (ev.index === 'body') {
       const ls = localOf(node, ev.start);
       let dx = lp[0] - ls[0], dy = lp[1] - ls[1];
@@ -1068,6 +1088,17 @@ export function DesignerView() {
                     <button onClick={() => moveItem(selItem, selItem.p, netPanel.w / 2 - cx, 0)} style={{ ...btnSt, padding: '4px 0', fontSize: 10.5 }}>{t('Centrar ↔ en la cara')}</button>
                     <button onClick={() => moveItem(selItem, selItem.p, 0, netPanel.h / 2 - cy)} style={{ ...btnSt, padding: '4px 0', fontSize: 10.5 }}>{t('Centrar ↕ en la cara')}</button>
                   </div>
+                  {selItem.src !== 'fold' && selItem.kind !== 'hole' && (
+                    // Curva: el rombo del centro en el plano la ajusta; estos botones la crean o la quitan.
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginBottom: 6 }}>
+                      <button onClick={() => {
+                        const ln = { x1: a[0], y1: a[1], x2: b[0], y2: b[1] }, ux = len > 1e-6 ? (b[0] - a[0]) / len : 1, uy = len > 1e-6 ? (b[1] - a[1]) / len : 0;
+                        const m = [cx - uy * len * 0.2, cy + ux * len * 0.2], cq = ctrlThrough(ln, m);
+                        setItemPts(selItem.key, a, b, [cq.qx, cq.qy]);
+                      }} style={{ ...btnSt, padding: '4px 0', fontSize: 10.5, borderColor: selItem.q ? '#9a5b1f' : '#d8d0c2' }}>{selItem.q ? t('Curva activa · arrastra el rombo') : t('Curvar')}</button>
+                      <button onClick={() => setItemPts(selItem.key, a, b, null)} disabled={!selItem.q} style={{ ...btnSt, padding: '4px 0', fontSize: 10.5, opacity: selItem.q ? 1 : 0.45 }}>{t('Enderezar')}</button>
+                    </div>
+                  )}
                 </>);
               })()}
               <div style={lbl}>{t('Mover la línea · paso mm')}</div>
