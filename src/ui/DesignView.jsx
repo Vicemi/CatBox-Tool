@@ -21,6 +21,9 @@ import { useD, dstore, selIdsOf, setSel } from '../design/ui.js';
 import { patchLayers, dupLayers, delLayers, reorder, placeLayer, alignLayers, distributeLayers, flipLayers, alignToEdge, setClipBelow } from '../design/ops.js';
 import { groupLayers, ungroupLayers, patchGroup, toggleCollapsed, setGroupVisible, setGroupLocked, setGroupOpacity, selectGroup, groupOfSelection, dropItem } from '../design/groups.js';
 import { MaskBlock } from './DesignMask.jsx';
+import { LayersPanel } from '../design/LayersPanel.jsx';
+import { ImageAIBlock } from '../design/ImageAI.jsx';
+import { FontPicker } from './FontPicker.jsx';
 import { DesignCanvas } from './DesignCanvas.jsx';
 import { DesignToolbar } from './DesignToolbar.jsx';
 import { ST, Block, Note, inputSt, selectSt, btnSt, CmField, MmField, ColorRow } from './widgets.jsx';
@@ -170,109 +173,10 @@ export function DesignView() {
   const loadFont = f => { try { document.fonts.load('400 20px "' + f + '"').then(() => store.set({})); } catch (_) { /* sin FontFaceSet */ } };
   const colorOf = l => l.color || '#211d18';
 
-  // —— Lista de capas ——
-  const rowClick = (e, l) => {
-    if (e.shiftKey && sel) {
-      const order = s.layers.map(x => x.id).reverse(), a = order.indexOf(sel.id), b = order.indexOf(l.id);
-      setSel(order.slice(Math.min(a, b), Math.max(a, b) + 1));
-    } else if (e.ctrlKey || e.metaKey) setSel(ids.includes(l.id) ? ids.filter(x => x !== l.id) : ids.concat([l.id]));
-    else setSel([l.id]);
-  };
-  const commitRename = (l, v) => { setRenaming(null); const n = v.trim(); if (n && n !== layerNameOf(l)) patchLayers([l.id], { name: n }); };
-  const warnsCount = l => warnsOf(l, creaseSegs, g.sbb).length;
-
-  // Pila visual (arriba = delante): capas sueltas y grupos con sus hijos.
-  const groups = s.groups || [], activeG = groupOfSelection(s, ids), grouped = ids.some(id => (s.layers.find(l => l.id === id) || {}).groupId != null);
-  const items = [], seenG = new Set();
-  s.layers.slice().reverse().forEach(l => {
-    const g = l.groupId != null ? groups.find(x => x.id === l.groupId) : null;
-    if (!g) { items.push({ l }); return; }
-    if (!seenG.has(g.id)) { seenG.add(g.id); items.push({ g, kids: s.layers.filter(x => x.groupId === g.id).reverse() }); }
-  });
-  const doGroup = () => groupLayers(ids, t('Grupo') + ' ' + (groups.length + 1));
-  const dragProps = key => ({
-    draggable: renaming !== key,
-    onDragStart: e => { setDragId(key); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-layer', String(key)); },
-    onDragEnd: () => { setDragId(null); setOver(null); },
-    onDragOver: e => { if (dragId == null) return; e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setOver({ key, above: e.clientY < r.top + r.height / 2 }); },
-    onDrop: e => { if (dragId == null) return; e.preventDefault(); dropItem(dragId, key, over ? over.above : true); setDragId(null); setOver(null); }
-  });
-  const dropShadow = key => over && over.key === key && dragId !== key ? (over.above ? '0 -2px 0 #9a5b1f' : '0 2px 0 #9a5b1f') : 'none';
-  const groupHeader = (g, kids) => {
-    const key = 'G:' + g.id, on = activeG && activeG.id === g.id;
-    return (
-      <div key={key} data-group-id={g.id} onClick={() => selectGroup(g.id)} title={g.name} {...dragProps(key)}
-        style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden', padding: '7px 8px', borderRadius: 6, cursor: 'pointer', opacity: dragId === key ? 0.4 : g.visible ? 1 : 0.6, border: '1px solid ' + (on ? '#9a5b1f' : '#d9cdb6'), background: on ? '#f7efe2' : '#f3ece0', boxShadow: dropShadow(key) }}>
-        <Tip label={g.collapsed ? t('Expandir grupo') : t('Contraer grupo')}><span role="button" aria-label={g.collapsed ? t('Expandir grupo') : t('Contraer grupo')} data-group-toggle onClick={e => { e.stopPropagation(); toggleCollapsed(g.id); }} style={{ display: 'flex', flex: 'none', cursor: 'pointer', color: '#5c554a' }}>{g.collapsed ? <IconChevronRight size={14} /> : <IconChevronDown size={14} />}</span></Tip>
-        <Tip label={t('Mostrar / ocultar')}><span role="button" aria-label={t('Mostrar / ocultar')} data-group-eye onClick={e => { e.stopPropagation(); setGroupVisible(g.id, !g.visible); }} style={{ display: 'flex', flex: 'none', cursor: 'pointer', color: g.visible ? '#3d3830' : '#cfc4ab' }}>{g.visible ? <IconEye size={15} /> : <IconEyeOff size={15} />}</span></Tip>
-        <Tip label={t('Bloquear / desbloquear')}><span role="button" aria-label={t('Bloquear / desbloquear')} data-group-lock onClick={e => { e.stopPropagation(); setGroupLocked(g.id, !g.locked); }} style={{ display: 'flex', flex: 'none', cursor: 'pointer', color: g.locked ? '#9a5b1f' : '#cfc4ab' }}>{g.locked ? <IconLock size={14} /> : <IconLockOpen size={14} />}</span></Tip>
-        <IconFolder size={14} style={{ color: '#9a5b1f', flex: 'none' }} />
-        {renaming === key
-          ? <input autoFocus aria-label={t('Nombre del grupo')} defaultValue={g.name} maxLength={32} onClick={e => e.stopPropagation()} onFocus={e => e.target.select()}
-            onBlur={e => { setRenaming(null); const n = e.target.value.trim(); if (n && n !== g.name) patchGroup(g.id, { name: n }); }} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') e.target.blur(); else if (e.key === 'Escape') setRenaming(null); }}
-            style={{ ...inputSt, flex: 1, minWidth: 0, padding: '2px 5px', fontFamily: 'inherit', fontSize: 12 }} />
-          : <span data-group-name={g.name} onDoubleClick={e => { e.stopPropagation(); setRenaming(key); }} style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, color: '#211d18', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.name}</span>}
-        <span style={{ fontFamily: MONO, fontSize: 10, color: '#8a8071', flex: 'none' }}>{kids.length}{g.opacity < 1 ? ' · ' + Math.round(g.opacity * 100) + '%' : ''}</span>
-      </div>
-    );
-  };
-  const layerRow = (l, inGroup) => {
-    const on = ids.includes(l.id), bd = '1px solid ' + (on ? '#9a5b1f' : '#e7e0d4');
-    return (
-      <div key={l.id} data-layer-id={l.id} data-in-group={inGroup ? '1' : undefined} onClick={e => rowClick(e, l)}
-        title={layerNameOf(l)} {...dragProps(l.id)}
-        style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden', padding: '7px 8px', marginLeft: inGroup ? 14 : 0, borderRadius: 6, cursor: 'pointer', opacity: dragId === l.id ? 0.4 : l.visible ? 1 : 0.6, borderTop: bd, borderRight: bd, borderBottom: bd, borderLeft: inGroup ? '3px solid #d9b98a' : bd, background: on ? '#f7efe2' : '#fff',
-          boxShadow: dropShadow(l.id) }}>
-        <IconGripVertical size={12} style={{ color: '#cfc4ab', flex: 'none', cursor: 'grab' }} />
-        <Tip label={t('Mostrar / ocultar')}><span role="button" aria-label={t('Mostrar / ocultar')} onClick={e => { e.stopPropagation(); toggleL(l.id, 'visible'); }} style={{ display: 'flex', flex: 'none', cursor: 'pointer', color: l.visible ? '#3d3830' : '#cfc4ab' }}>{l.visible ? <IconEye size={15} /> : <IconEyeOff size={15} />}</span></Tip>
-        <Tip label={t('Bloquear / desbloquear')}><span role="button" aria-label={t('Bloquear / desbloquear')} onClick={e => { e.stopPropagation(); toggleL(l.id, 'locked'); }} style={{ display: 'flex', flex: 'none', cursor: 'pointer', color: l.locked ? '#9a5b1f' : '#cfc4ab' }}>{l.locked ? <IconLock size={14} /> : <IconLockOpen size={14} />}</span></Tip>
-        <span style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 700, color: '#8a8071', border: '1px solid #ded5c4', borderRadius: 3, padding: '1px 4px', flex: 'none' }}>{l.kind === 'text' ? 'T' : l.kind === 'image' ? 'IM' : 'F'}</span>
-        {l.mask && l.mask.url && <Tip label={t('Máscara: clic para pintarla, Mayús+clic para activarla o apagarla')}><img alt={t('Máscara de capa')} src={l.mask.url} data-mask-thumb onClick={e => { e.stopPropagation(); if (e.shiftKey) store.set(st => ({ layers: st.layers.map(x => x.id === l.id ? { ...x, mask: { ...x.mask, on: x.mask.on === false } } : x) })); else { setSel([l.id]); dstore.set({ maskEdit: d.maskEdit === l.id ? null : l.id }); } }} style={{ width: 22, height: 22, objectFit: 'contain', flex: 'none', border: '1px solid ' + (d.maskEdit === l.id ? '#9a5b1f' : '#ded5c4'), borderRadius: 3, background: '#888', opacity: l.mask.on === false ? 0.35 : 1, cursor: 'pointer' }} /></Tip>}
-        {renaming === l.id
-          ? <input autoFocus aria-label={t('Nombre de capa')} defaultValue={layerNameOf(l)} maxLength={32} onClick={e => e.stopPropagation()} onFocus={e => e.target.select()}
-            onBlur={e => commitRename(l, e.target.value)} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') e.target.blur(); else if (e.key === 'Escape') setRenaming(null); }}
-            style={{ ...inputSt, flex: 1, minWidth: 0, padding: '2px 5px', fontFamily: 'inherit', fontSize: 12 }} />
-          : <span data-layer-name={layerNameOf(l)} onDoubleClick={e => { e.stopPropagation(); setRenaming(l.id); }} style={{ flex: 1, minWidth: 0, fontSize: 12, color: '#211d18', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{layerNameOf(l)}</span>}
-        <span style={{ fontSize: 10, color: '#9a5b1f', flex: 'none' }}>{l.finish === 'emboss' ? t('Relieve') + (embDirOf(l, s.embDir) === 'up' ? '↑' : '↓') : (FIN[l.finish] ? t(FIN[l.finish]) : '')}</span>
-        <Tip label={t('Duplicar esta capa')}><span role="button" aria-label={t('Duplicar esta capa')} onClick={e => { e.stopPropagation(); dupLayers([l.id]); }} style={{ display: 'flex', color: '#9a5b1f', cursor: 'pointer', flex: 'none' }}><IconCopy size={14} /></span></Tip>
-        {warnsCount(l) > 0 && <span style={{ width: 7, height: 7, borderRadius: 99, background: '#d05a2a', flex: 'none' }} />}
-      </div>
-    );
-  };
+  const groups = s.groups || [], activeG = groupOfSelection(s, ids);
 
   return (<TipProvider>
-    <div style={{ width: 256, flex: 'none', background: '#faf7f0', borderRight: '1px solid #ded5c4', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-      <Block>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 9 }}>
-          <ST style={{ marginBottom: 0 }}>{t('Capas')}</ST>
-          <div style={{ display: 'flex', gap: 5 }}>
-            <IconBtn icon={IconArrowBackUp} size={26} label={t('Deshacer (⌘Z / Ctrl+Z)')} disabled={!histPastN} onClick={() => store.undo()} />
-            <IconBtn icon={IconArrowForwardUp} size={26} label={t('Rehacer (⌘⇧Z / Ctrl+Shift+Z)')} disabled={!histFutureN} onClick={() => store.redo()} />
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-          <TBtn icon={IconTypography} tip={t('Añadir una capa de texto')} onClick={() => addL((id, hp) => ({ id, kind: 'text', x: hp.cx, y: hp.cy, content: t('Doble clic para editar'), font: 'Noto Sans', size: 6, weight: 400, color: d.color || '#211d18', finish: 'none', visible: true }))} style={{ flex: 1, fontSize: 11.5 }}>{t('Texto')}</TBtn>
-          <TBtn icon={IconPhoto} tip={t('Añadir una imagen desde archivo')} onClick={() => uploadImage(addL)} style={{ flex: 1, fontSize: 11.5 }}>{t('Imagen')}</TBtn>
-          <TBtn icon={IconSquare} tip={t('Añadir una forma rectangular')} onClick={() => addL((id, hp) => { const w = Math.min(30, hp.safeBox[2] - hp.safeBox[0]), h = Math.min(8, hp.safeBox[3] - hp.safeBox[1]); return { id, kind: 'shape', x: hp.cx - w / 2, y: hp.cy - h / 2, w, h, content: t('Forma'), color: d.color || '#9a5b1f', finish: 'none', visible: true }; })} style={{ flex: 1, fontSize: 11.5 }}>{t('Forma')}</TBtn>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
-          <TBtn icon={IconPhotoEdit} tip={t('Abrir el editor de imágenes con la capa seleccionada')} disabled={!canEditImg} onClick={openEdit} style={{ fontSize: 11.5, opacity: canEditImg ? 1 : 0.4, cursor: canEditImg ? 'pointer' : 'default' }}>{t('Editar imagen')}</TBtn>
-          <TBtn icon={IconPalette} tip={t('Documento en blanco con la proporción de la cara; el resultado se inserta como capa de imagen')} disabled={!hero} onClick={openCompose} style={{ fontSize: 11.5 }}>{t('Componer cara')}</TBtn>
-        </div>
-        <TBtn icon={IconCopy} tip={t('Duplicar la capa seleccionada (⌘D / Ctrl+D)')} onClick={() => dupLayers(ids)} disabled={!ids.length} style={{ width: '100%', marginBottom: 10, padding: '6px 0', fontSize: 11.5, opacity: ids.length ? 1 : 0.4, cursor: ids.length ? 'pointer' : 'default' }}>{t('Duplicar capa / imagen')}</TBtn>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
-          <TBtn icon={IconFolderPlus} tip={t('Agrupar las capas seleccionadas (Ctrl+G)')} data-testid="group-btn" disabled={!ids.length} onClick={doGroup} style={{ fontSize: 11.5, opacity: ids.length ? 1 : 0.4, cursor: ids.length ? 'pointer' : 'default' }}>{t('Agrupar')}</TBtn>
-          <TBtn icon={IconFolderMinus} tip={t('Desagrupar (Ctrl+Mayús+G)')} data-testid="ungroup-btn" disabled={!grouped} onClick={() => ungroupLayers(ids)} style={{ fontSize: 11.5, opacity: grouped ? 1 : 0.4, cursor: grouped ? 'pointer' : 'default' }}>{t('Desagrupar')}</TBtn>
-        </div>
-        <div style={{ display: 'grid', gap: 5 }} data-testid="layer-list" onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(null); }}>
-          {items.map(it => it.g ? (<React.Fragment key={'G:' + it.g.id}>{groupHeader(it.g, it.kids)}{!it.g.collapsed && it.kids.map(l => layerRow(l, true))}</React.Fragment>) : layerRow(it.l, false))}
-        </div>
-      </Block>
-      <div style={{ padding: 14 }}>
-        <Note><b style={{ color: '#211d18' }}>{t('Reglas de capa')}</b><br />{t('Arrastra para mover. Si cruza un pliegue, sale de la zona segura o baja de 300 dpi, verás un aviso en el panel derecho. Los acabados crean canales de producción independientes.')}</Note>
-        <div style={{ marginTop: 8, fontSize: 10.5, lineHeight: 1.6, color: '#a59a85' }}>{t('Doble clic en el nombre para renombrar · arrastra una capa para reordenarla · Shift/Ctrl+clic para varias.')}</div>
-      </div>
-    </div>
+    <LayersPanel s={s} d={d} t={t} ids={ids} sel={sel} g={g} hero={hero} creaseSegs={creaseSegs} addL={addL} canEditImg={canEditImg} openEdit={openEdit} openCompose={openCompose} histPastN={histPastN} histFutureN={histFutureN} updAll={updAll} />
 
     <DesignToolbar onImage={() => uploadImage(addL)} />
     <DesignCanvas g={g} onImageDrop={dropImages} />
@@ -375,9 +279,7 @@ export function DesignView() {
         {sel.kind === 'text' && (
           <Block>
             <ST>{t('Tipografía')}</ST>
-            <select aria-label={t('Tipografía')} value={sel.font || 'Noto Sans'} onChange={e => { loadFont(e.target.value); updAll({ font: e.target.value }); }} style={{ ...selectSt, marginBottom: 8, fontFamily: "'" + (sel.font || 'Noto Sans') + "'" }}>
-              {FONTS.map(f => <option key={f} value={f} style={{ fontFamily: "'" + f + "'" }}>{f}</option>)}
-            </select>
+            <FontPicker value={sel.font || 'Noto Sans'} onChange={f => { loadFont(f); updAll({ font: f }); }} style={{ marginBottom: 8 }} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, marginBottom: 8 }}>
               <MmField label={t('Tamaño')} mm={Math.round(sel.size * 100) / 100} min={1.5} max={120} step={0.5} onChange={v => updAll({ size: v })} />
               <div><Lbl>{t('Grosor')}</Lbl>
@@ -439,6 +341,7 @@ export function DesignView() {
             {!sel.imgSrc && <div><Lbl>{t('Origen px')}</Lbl><input type="number" step="100" value={sel.pxw} onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) upd({ pxw: Math.max(50, v) }); }} style={inputSt} /></div>}
           </Block>
         )}
+        {sel.kind === 'image' && sel.imgSrc && !multi && <Block><ST>{t('Mejorar con IA')}</ST><ImageAIBlock sel={sel} /></Block>}
         {!multi && <MaskBlock sel={sel} facePts={faceP ? faceP.pts : null} t={t} />}
         {!(sel.kind === 'shape' && sel.shape === 'line') && <ShadowBlock sel={sel} updAll={updAll} t={t} />}
         <Block>

@@ -1,6 +1,6 @@
 // Pure pixel helpers on ImageData-like objects {data, width, height} (RGBA). No DOM.
 
-const near = (d, i, r, tol) => Math.max(Math.abs(d[i] - r[0]), Math.abs(d[i + 1] - r[1]), Math.abs(d[i + 2] - r[2]), Math.abs(d[i + 3] - r[3])) <= tol;
+export const near = (d, i, r, tol) => Math.max(Math.abs(d[i] - r[0]), Math.abs(d[i + 1] - r[1]), Math.abs(d[i + 2] - r[2]), Math.abs(d[i + 3] - r[3])) <= tol;
 
 // Flood from seed pixel indices; a pixel joins when within tol (0..255, per channel) of the reference color.
 function grow(img, seeds, ref, tol) {

@@ -1,5 +1,6 @@
 // Traducciones del área «editor». Clave = texto en español; valor = traducción.
-export default {
+import photo from './design-photo.js';
+const base = {
   en: {
     'Mover / transformar': 'Move / transform', 'Selección rectangular': 'Rectangular selection', 'Varita mágica': 'Magic wand', 'Pincel': 'Brush', 'Goma': 'Eraser',
     'Bote de pintura': 'Paint bucket', 'Rectángulo': 'Rectangle', 'Elipse': 'Ellipse', 'Línea': 'Line', 'Cuentagotas': 'Eyedropper',
@@ -41,3 +42,4 @@ export default {
     'Borrar selección': '删除选区', 'Recortar documento a la selección': '按选区裁剪文档', 'Deseleccionar': '取消选择'
   }
 };
+export default { en: { ...base.en, ...photo.en }, zh: { ...base.zh, ...photo.zh } };
