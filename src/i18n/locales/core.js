@@ -1,6 +1,15 @@
 // Traducciones del área «core». Clave = texto en español; valor = traducción.
 export default {
   en: {
+    'Recientes': 'Recent',
+    'De la app': 'Built-in',
+    'Instaladas en el sistema': 'Installed on this system',
+    'Tipografía': 'Typeface',
+    'Buscar tipografía…': 'Search typeface…',
+    'Leyendo las fuentes del sistema…': 'Reading system fonts…',
+    'No se pudieron leer las fuentes del sistema (permiso denegado). Vuelve a abrir el selector para reintentar.': 'Could not read system fonts (permission denied). Open the picker again to retry.',
+    'Este navegador no permite listar las fuentes instaladas; usa la app de escritorio o Chrome/Edge.': 'This browser cannot list installed fonts; use the desktop app or Chrome/Edge.',
+    'Ninguna tipografía coincide.': 'No typeface matches.',
     'Aceptar': 'OK',
     'Cancelar': 'Cancel',
     'Confirmar': 'Confirm',
@@ -66,6 +75,15 @@ export default {
     'Poner a cero la rotación de la caja (tras Girar caja)': 'Reset box rotation to zero (after Turn box)'
   },
   zh: {
+    'Recientes': '最近使用',
+    'De la app': '应用内置',
+    'Instaladas en el sistema': '系统已安装',
+    'Tipografía': '字体',
+    'Buscar tipografía…': '搜索字体…',
+    'Leyendo las fuentes del sistema…': '正在读取系统字体…',
+    'No se pudieron leer las fuentes del sistema (permiso denegado). Vuelve a abrir el selector para reintentar.': '无法读取系统字体（权限被拒绝）。重新打开选择器以重试。',
+    'Este navegador no permite listar las fuentes instaladas; usa la app de escritorio o Chrome/Edge.': '此浏览器无法列出已安装字体；请使用桌面应用或 Chrome/Edge。',
+    'Ninguna tipografía coincide.': '没有匹配的字体。',
     'Aceptar': '确定',
     'Cancelar': '取消',
     'Confirmar': '确认',
