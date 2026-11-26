@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import { dxfToSvg, svgSizeMm } from '../src/dieline/reference.js';
-for (const f of fs.readdirSync('F:/EcoDeli Pack/samples_Packaging_v2/_logs/dxf').filter(f => f.endsWith('.dxf'))) {
-  const { svg, w, h } = dxfToSvg(fs.readFileSync('F:/EcoDeli Pack/samples_Packaging_v2/_logs/dxf/' + f, 'utf8'));
-  assert.ok(w > 10 && h > 10 && svg.includes('#d01c2c'), f);
-  console.log(f.slice(0, 40), w.toFixed(1), 'x', h.toFixed(1), 'mm');
+import { dxfOf } from '../src/export/dxf.js';
+// Round trip with the app's own DXF writer: a 135 x 205 mm net (cut outline, crease, perforation), both versions.
+const net = [{ t: 'cut', pts: [[0, 0], [135, 0], [135, 205], [0, 205], [0, 0]] }, { t: 'crease', pts: [[0, 100], [135, 100]] }, { t: 'perf', pts: [[10, 50], [120, 50]] }];
+for (const version of ['R12', 'R2000']) {
+  const { svg, w, h } = dxfToSvg(dxfOf(net, { version }));
+  assert.ok(Math.abs(w - 135) < 0.01 && Math.abs(h - 205) < 0.01 && svg.includes('#d01c2c'), version + ' size and red cut layer');
+  console.log(version, w.toFixed(1), 'x', h.toFixed(1), 'mm');
 }
 // A tiny DXF with a circle and a bulged polyline in cm.
 const mini = ['0','SECTION','2','HEADER','9','$INSUNITS','70','5','0','ENDSEC','0','SECTION','2','ENTITIES','0','CIRCLE','8','0','10','5','20','5','40','5','0','LWPOLYLINE','8','0','90','2','70','0','10','0','20','0','42','1','10','10','20','0','0','ENDSEC','0','EOF'].join('\n');
